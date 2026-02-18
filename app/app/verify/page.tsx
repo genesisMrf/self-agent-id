@@ -47,8 +47,13 @@ function VerifyContent() {
     try {
       let keyHash: string;
       if (key.startsWith("0x") && key.length === 66) {
+        // Already a bytes32 key
         keyHash = key;
+      } else if (key.startsWith("0x") && key.length === 42) {
+        // Ethereum address — zero-pad to bytes32
+        keyHash = ethers.zeroPadValue(key, 32);
       } else {
+        // Arbitrary string — hash to bytes32
         keyHash = ethers.keccak256(ethers.toUtf8Bytes(key));
       }
       setResolvedKey(keyHash);
@@ -139,7 +144,7 @@ function VerifyContent() {
     lookupAgent(agentKey);
   };
 
-  const snippets = getSnippets(REGISTRY_ADDRESS, resolvedKey);
+  const snippets = getSnippets(REGISTRY_ADDRESS);
 
   return (
     <>
@@ -148,7 +153,7 @@ function VerifyContent() {
           type="text"
           value={agentKey}
           onChange={(e) => setAgentKey(e.target.value)}
-          placeholder="Agent public key or identifier"
+          placeholder="Agent address (0x...) or bytes32 key"
           className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-black"
         />
         <button

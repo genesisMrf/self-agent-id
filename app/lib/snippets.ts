@@ -12,15 +12,14 @@ export interface UseCaseSnippets {
 }
 
 export function getSnippets(
-  contractAddress: string = "0x60651482a3033A72128f874623Fc790061cc46D4",
-  agentPubKey: string = "0x<YOUR_AGENT_PUBKEY>"
+  contractAddress: string = "0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C",
 ): UseCaseSnippets[] {
   return [
     {
       title: "Agent \u2192 Service",
       description:
-        "A service verifies that an AI agent is human-backed before granting access.",
-      flow: "Agent signs request \u2192 Service checks signature + on-chain status \u2192 Access granted",
+        "A service verifies that an AI agent is human-backed before granting access. The SDK signs every request with the agent's private key; the service recovers the signer and checks on-chain status.",
+      flow: "Agent signs request \u2192 Service recovers signer from signature \u2192 Service checks on-chain \u2192 Access granted",
       snippets: [
         {
           label: "TypeScript (Agent)",
@@ -30,6 +29,7 @@ export function getSnippets(
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY,
   registryAddress: "${contractAddress}",
+  rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
 });
 
 // Every request is automatically signed
@@ -46,22 +46,25 @@ import express from "express";
 
 const verifier = new SelfAgentVerifier({
   registryAddress: "${contractAddress}",
+  rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
 });
 
 const app = express();
 
-// One-line middleware \u2014 rejects unverified agents
-app.use(verifier.expressMiddleware());
+// Middleware: recovers signer from signature, checks on-chain
+app.use("/api", verifier.expressMiddleware());
 
-app.post("/data", (req, res) => {
-  // req.agent.id, req.agent.nullifier available
-  res.json({ status: "ok" });
+app.post("/api/data", (req, res) => {
+  // req.agent.address — recovered from signature
+  // req.agent.agentId — from on-chain registry
+  res.json({ agent: req.agent.address });
 });`,
         },
         {
           label: "Python (Service)",
           language: "python",
           code: `from web3 import Web3
+from eth_account.messages import encode_defunct
 
 w3 = Web3(Web3.HTTPProvider(
     "https://forno.celo-sepolia.celo-testnet.org"
@@ -71,19 +74,98 @@ registry = w3.eth.contract(
     abi=REGISTRY_ABI
 )
 
-def verify_agent(agent_pubkey: str) -> bool:
-    """Check if agent is human-backed on-chain."""
-    return registry.functions.isVerifiedAgent(
-        agent_pubkey
-    ).call()`,
+def verify_agent_request(signature, timestamp, method, url, body=""):
+    """Recover signer from signature, then check on-chain."""
+    # 1. Reconstruct the signed message
+    body_hash = w3.keccak(text=body).hex()
+    message = w3.keccak(text=timestamp + method + url + body_hash)
+
+    # 2. Recover signer address (cryptographic — can't be faked)
+    signer = w3.eth.account.recover_message(
+        encode_defunct(message), signature=signature
+    )
+
+    # 3. Check on-chain: is this address a verified agent?
+    agent_key = w3.to_bytes(hexstr=signer).rjust(32, b"\\x00")
+    return registry.functions.isVerifiedAgent(agent_key).call()`,
+        },
+      ],
+    },
+    {
+      title: "Sybil Detection",
+      description:
+        "Detect when multiple agents are controlled by the same human. Each human has a unique nullifier — services can enforce their own limits.",
+      flow: "Service checks nullifier \u2192 Compares agent count \u2192 Enforces policy (e.g., max 1 per human)",
+      snippets: [
+        {
+          label: "Solidity",
+          language: "solidity",
+          code: `interface ISelfAgentRegistry {
+    function isVerifiedAgent(bytes32 key) external view returns (bool);
+    function getAgentId(bytes32 key) external view returns (uint256);
+    function getHumanNullifier(uint256 id) external view returns (uint256);
+    function getAgentCountForHuman(uint256 n) external view returns (uint256);
+    function sameHuman(uint256 a, uint256 b) external view returns (bool);
+}
+
+contract MyProtocol {
+    ISelfAgentRegistry immutable registry =
+        ISelfAgentRegistry(${contractAddress});
+
+    // Configurable: how many agents per human this service allows
+    uint256 public maxAgentsPerHuman = 1;
+
+    modifier onlyUniqueHuman(bytes32 agentKey) {
+        require(registry.isVerifiedAgent(agentKey), "Not verified");
+        uint256 agentId = registry.getAgentId(agentKey);
+        uint256 nullifier = registry.getHumanNullifier(agentId);
+        require(
+            registry.getAgentCountForHuman(nullifier) <= maxAgentsPerHuman,
+            "Too many agents for this human"
+        );
+        _;
+    }
+}`,
+        },
+        {
+          label: "TypeScript (Service)",
+          language: "typescript",
+          code: `import { ethers } from "ethers";
+
+const MAX_AGENTS_PER_HUMAN = 1; // your policy
+
+async function checkSybil(agentKey: string): Promise<boolean> {
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const registry = new ethers.Contract(
+    "${contractAddress}", REGISTRY_ABI, provider
+  );
+
+  const agentId = await registry.getAgentId(agentKey);
+  if (agentId === 0n) return false; // not registered
+
+  const nullifier = await registry.getHumanNullifier(agentId);
+  const count = await registry.getAgentCountForHuman(nullifier);
+
+  return count <= BigInt(MAX_AGENTS_PER_HUMAN);
+}`,
+        },
+        {
+          label: "Solidity (Peer check)",
+          language: "solidity",
+          code: `// Check if two agents are the same human (sybil check)
+bool isSybil = ISelfAgentRegistry(${contractAddress})
+    .sameHuman(agentIdA, agentIdB);
+
+// Example: reject votes from same human
+require(!isSybil, "Same human voting twice");`,
         },
       ],
     },
     {
       title: "Agent \u2192 Chain",
       description:
-        "A smart contract checks that an agent is human-verified before executing an action.",
-      flow: "Agent calls contract \u2192 Contract reads registry \u2192 Action proceeds if verified",
+        "A smart contract checks that the caller is a verified human-backed agent before executing an action.",
+      flow: "Agent calls contract \u2192 Contract derives agent key from msg.sender \u2192 Checks registry \u2192 Action proceeds",
       snippets: [
         {
           label: "Solidity",
@@ -101,7 +183,9 @@ contract MyProtocol {
     ISelfAgentRegistry immutable registry =
         ISelfAgentRegistry(${contractAddress});
 
-    modifier onlyVerifiedAgent(bytes32 agentKey) {
+    // Derive agent key from msg.sender (matches MVP model)
+    modifier onlyVerifiedAgent() {
+        bytes32 agentKey = bytes32(uint256(uint160(msg.sender)));
         require(
             registry.isVerifiedAgent(agentKey),
             "Agent not human-verified"
@@ -110,141 +194,33 @@ contract MyProtocol {
     }
 
     function agentAction(
-        bytes32 agentKey,
         bytes calldata data
-    ) external onlyVerifiedAgent(agentKey) {
+    ) external onlyVerifiedAgent {
         // Only human-backed agents reach here
+        // msg.sender IS the verified agent
     }
 }`,
         },
         {
           label: "TypeScript (Submit tx)",
           language: "typescript",
-          code: `import { SelfAgent } from "@selfxyz/agent-sdk";
-import { ethers } from "ethers";
+          code: `import { ethers } from "ethers";
 
-const agent = new SelfAgent({
-  privateKey: process.env.AGENT_PRIVATE_KEY,
-  registryAddress: "${contractAddress}",
-});
+// Agent's wallet — the address IS the agent identity
+const wallet = new ethers.Wallet(
+  process.env.AGENT_PRIVATE_KEY,
+  new ethers.JsonRpcProvider(RPC_URL)
+);
 
-// Agent submits its own pubkey hash as proof
 const myProtocol = new ethers.Contract(
   MY_PROTOCOL_ADDRESS,
   MY_PROTOCOL_ABI,
-  agent.wallet
+  wallet
 );
 
-const tx = await myProtocol.agentAction(
-  "${agentPubKey}",
-  "0x..."
-);
+// No need to pass agent key — contract derives it from msg.sender
+const tx = await myProtocol.agentAction("0x...");
 await tx.wait();`,
-        },
-        {
-          label: "Python (Submit tx)",
-          language: "python",
-          code: `from web3 import Web3
-
-w3 = Web3(Web3.HTTPProvider(
-    "https://forno.celo-sepolia.celo-testnet.org"
-))
-
-my_protocol = w3.eth.contract(
-    address=MY_PROTOCOL_ADDRESS,
-    abi=MY_PROTOCOL_ABI
-)
-
-tx = my_protocol.functions.agentAction(
-    "${agentPubKey}",
-    b"\\x00"
-).build_transaction({
-    "from": agent_address,
-    "nonce": w3.eth.get_transaction_count(agent_address),
-})
-
-signed = w3.eth.account.sign_transaction(tx, AGENT_KEY)
-tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)`,
-        },
-      ],
-    },
-    {
-      title: "Agent \u2192 Agent",
-      description:
-        "One AI agent verifies another is human-backed before cooperating.",
-      flow: "Agent A sends signed request \u2192 Agent B verifies signature + on-chain status \u2192 Collaboration proceeds",
-      snippets: [
-        {
-          label: "TypeScript (Verify peer)",
-          language: "typescript",
-          code: `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
-
-const verifier = new SelfAgentVerifier({
-  registryAddress: "${contractAddress}",
-});
-
-// When receiving a request from another agent:
-const result = await verifier.verify({
-  agentId: headers["x-self-agent-id"],
-  pubkey: headers["x-self-agent-pubkey"],
-  signature: headers["x-self-agent-signature"],
-  timestamp: headers["x-self-agent-timestamp"],
-  method: req.method,
-  url: req.url,
-  body: req.body,
-});
-
-if (result.verified) {
-  // Peer agent is human-backed \u2014 safe to cooperate
-  console.log("Nullifier:", result.nullifier);
-}`,
-        },
-        {
-          label: "Solidity (On-chain check)",
-          language: "solidity",
-          code: `// Check if two agents share the same human
-// Useful for detecting sybil behavior
-bool same = ISelfAgentRegistry(${contractAddress})
-    .sameHuman(agentIdA, agentIdB);
-
-// Or just verify the peer is registered
-bool peerOk = ISelfAgentRegistry(${contractAddress})
-    .isVerifiedAgent(peerAgentPubKey);`,
-        },
-        {
-          label: "Python (Verify peer)",
-          language: "python",
-          code: `from web3 import Web3
-
-w3 = Web3(Web3.HTTPProvider(
-    "https://forno.celo-sepolia.celo-testnet.org"
-))
-registry = w3.eth.contract(
-    address="${contractAddress}",
-    abi=REGISTRY_ABI
-)
-
-def verify_peer_agent(peer_pubkey: str) -> dict:
-    """Verify a peer agent is human-backed."""
-    is_verified = registry.functions.isVerifiedAgent(
-        peer_pubkey
-    ).call()
-
-    if not is_verified:
-        return {"verified": False, "reason": "Not registered"}
-
-    agent_id = registry.functions.getAgentId(
-        peer_pubkey
-    ).call()
-    nullifier = registry.functions.getHumanNullifier(
-        agent_id
-    ).call()
-
-    return {
-        "verified": True,
-        "agent_id": agent_id,
-        "nullifier": nullifier,
-    }`,
         },
       ],
     },

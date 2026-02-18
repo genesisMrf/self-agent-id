@@ -2,7 +2,7 @@ import { ethers } from "ethers";
 import { REGISTRY_ABI, HEADERS } from "./constants";
 
 export interface SelfAgentConfig {
-  /** Agent's secp256k1 private key (hex, with or without 0x) */
+  /** Agent's private key (hex, with or without 0x) */
   privateKey: string;
   /** Deployed SelfAgentRegistry contract address */
   registryAddress: string;
@@ -11,7 +11,8 @@ export interface SelfAgentConfig {
 }
 
 export interface AgentInfo {
-  pubkey: string;
+  address: string;
+  agentKey: string;
   agentId: bigint;
   isVerified: boolean;
   nullifier: bigint;
@@ -21,6 +22,12 @@ export interface AgentInfo {
 /**
  * Agent-side SDK for Self Agent ID.
  *
+ * The agent's on-chain identity is its Ethereum address, zero-padded to bytes32:
+ *   agentKey = zeroPadValue(address, 32)
+ *
+ * For off-chain authentication, the agent signs each request with its private key.
+ * Services verify the signature, recover the signer address, and check on-chain status.
+ *
  * Usage:
  * ```ts
  * const agent = new SelfAgent({
@@ -29,20 +36,14 @@ export interface AgentInfo {
  *   rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
  * });
  *
- * // Check registration
  * const registered = await agent.isRegistered();
- *
- * // Sign a request
- * const headers = await agent.signRequest("GET", "/api/data");
- *
- * // Fetch with automatic signing
  * const response = await agent.fetch("https://api.example.com/data");
  * ```
  */
 export class SelfAgent {
   private wallet: ethers.Wallet;
   private registry: ethers.Contract;
-  private _pubkeyHash: string;
+  private _agentKey: string;
 
   constructor(config: SelfAgentConfig) {
     const provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -52,31 +53,32 @@ export class SelfAgent {
       REGISTRY_ABI,
       provider
     );
-    // keccak256 of the compressed public key as the on-chain identifier
-    this._pubkeyHash = ethers.keccak256(this.wallet.signingKey.compressedPublicKey);
+    // Agent key = address zero-padded to 32 bytes (matches on-chain derivation)
+    this._agentKey = ethers.zeroPadValue(this.wallet.address, 32);
   }
 
-  /** The agent's public key hash (bytes32) registered on-chain */
-  get pubkeyHash(): string {
-    return this._pubkeyHash;
+  /** The agent's on-chain key (bytes32) — zero-padded address */
+  get agentKey(): string {
+    return this._agentKey;
   }
 
-  /** The agent's Ethereum address (derived from private key) */
+  /** The agent's Ethereum address */
   get address(): string {
     return this.wallet.address;
   }
 
   /** Check if this agent is registered and verified on-chain */
   async isRegistered(): Promise<boolean> {
-    return this.registry.isVerifiedAgent(this._pubkeyHash);
+    return this.registry.isVerifiedAgent(this._agentKey);
   }
 
   /** Get full agent info from the registry */
   async getInfo(): Promise<AgentInfo> {
-    const agentId: bigint = await this.registry.getAgentId(this._pubkeyHash);
+    const agentId: bigint = await this.registry.getAgentId(this._agentKey);
     if (agentId === 0n) {
       return {
-        pubkey: this._pubkeyHash,
+        address: this.wallet.address,
+        agentKey: this._agentKey,
         agentId: 0n,
         isVerified: false,
         nullifier: 0n,
@@ -92,7 +94,8 @@ export class SelfAgent {
     const agentCount: bigint = await this.registry.getAgentCountForHuman(nullifier);
 
     return {
-      pubkey: this._pubkeyHash,
+      address: this.wallet.address,
+      agentKey: this._agentKey,
       agentId,
       isVerified,
       nullifier,
@@ -100,17 +103,11 @@ export class SelfAgent {
     };
   }
 
-  /** Sign arbitrary data with the agent's private key */
-  async sign(data: string | Uint8Array): Promise<string> {
-    const hash =
-      typeof data === "string"
-        ? ethers.keccak256(ethers.toUtf8Bytes(data))
-        : ethers.keccak256(data);
-    return this.wallet.signMessage(ethers.getBytes(hash));
-  }
-
   /**
    * Generate authentication headers for a request.
+   *
+   * The service recovers the signer address from the signature,
+   * converts it to a bytes32 agent key, and checks on-chain status.
    *
    * Signature covers: keccak256(timestamp + method + url + bodyHash)
    */
@@ -131,7 +128,7 @@ export class SelfAgent {
     const signature = await this.wallet.signMessage(ethers.getBytes(message));
 
     return {
-      [HEADERS.PUBKEY]: this._pubkeyHash,
+      [HEADERS.ADDRESS]: this.wallet.address,
       [HEADERS.SIGNATURE]: signature,
       [HEADERS.TIMESTAMP]: timestamp,
     };

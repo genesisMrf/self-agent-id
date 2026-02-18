@@ -19,7 +19,10 @@ export interface VerifierConfig {
 
 export interface VerificationResult {
   valid: boolean;
-  pubkeyHash: string;
+  /** The agent's Ethereum address (recovered from signature) */
+  agentAddress: string;
+  /** The agent's on-chain key (bytes32) */
+  agentKey: string;
   agentId: bigint;
   error?: string;
 }
@@ -33,10 +36,15 @@ interface CacheEntry {
 /**
  * Service-side verifier for Self Agent ID requests.
  *
- * Verifies:
- * 1. Signature is valid (signed by the claimed agent)
- * 2. Timestamp is within the replay window
- * 3. Agent is registered and verified on-chain (cached)
+ * Security chain:
+ * 1. Recover signer address from ECDSA signature (cryptographic proof of key ownership)
+ * 2. Derive agent key: zeroPadValue(recoveredAddress, 32)
+ * 3. Check on-chain: isVerifiedAgent(agentKey) (proof that a human registered this address)
+ * 4. Check timestamp freshness (replay protection)
+ *
+ * The signer address is RECOVERED from the signature, never trusted from headers.
+ * This closes the off-chain verification gap — you can't claim to be an agent
+ * without holding its private key.
  *
  * Usage:
  * ```ts
@@ -45,15 +53,17 @@ interface CacheEntry {
  *   rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
  * });
  *
- * // Verify a request
  * const result = await verifier.verify({
- *   pubkeyHash: req.headers["x-self-agent-pubkey"],
  *   signature: req.headers["x-self-agent-signature"],
  *   timestamp: req.headers["x-self-agent-timestamp"],
  *   method: req.method,
  *   url: req.originalUrl,
  *   body: req.body ? JSON.stringify(req.body) : undefined,
  * });
+ *
+ * if (result.valid) {
+ *   console.log("Verified agent:", result.agentAddress);
+ * }
  * ```
  */
 export class SelfAgentVerifier {
@@ -75,24 +85,32 @@ export class SelfAgentVerifier {
 
   /**
    * Verify a signed agent request.
+   *
+   * The agent's identity is derived from the signature itself — not from
+   * any header that could be spoofed. This is the key security property.
    */
   async verify(params: {
-    pubkeyHash: string;
     signature: string;
     timestamp: string;
     method: string;
     url: string;
     body?: string;
   }): Promise<VerificationResult> {
-    const { pubkeyHash, signature, timestamp, method, url, body } = params;
+    const { signature, timestamp, method, url, body } = params;
+    const empty: VerificationResult = {
+      valid: false,
+      agentAddress: ethers.ZeroAddress,
+      agentKey: ethers.ZeroHash,
+      agentId: 0n,
+    };
 
     // 1. Check timestamp freshness (replay protection)
     const ts = parseInt(timestamp, 10);
     if (isNaN(ts) || Math.abs(Date.now() - ts) > this.maxAgeMs) {
-      return { valid: false, pubkeyHash, agentId: 0n, error: "Timestamp expired or invalid" };
+      return { ...empty, error: "Timestamp expired or invalid" };
     }
 
-    // 2. Reconstruct and verify signature
+    // 2. Reconstruct the signed message
     const bodyHash = body
       ? ethers.keccak256(ethers.toUtf8Bytes(body))
       : ethers.keccak256(ethers.toUtf8Bytes(""));
@@ -101,45 +119,50 @@ export class SelfAgentVerifier {
       ethers.toUtf8Bytes(timestamp + method.toUpperCase() + url + bodyHash)
     );
 
+    // 3. Recover signer address from signature (cryptographic — can't be faked)
     let signerAddress: string;
     try {
       signerAddress = ethers.verifyMessage(ethers.getBytes(message), signature);
     } catch {
-      return { valid: false, pubkeyHash, agentId: 0n, error: "Invalid signature" };
+      return { ...empty, error: "Invalid signature" };
     }
 
-    // 3. Verify the signer's pubkey hash matches the claimed one
-    // We can't directly recover the pubkey hash from just the address,
-    // but we verify the signature is valid and the agent is registered on-chain.
-    // The pubkeyHash is the on-chain identifier; the signature proves key possession.
+    // 4. Derive the on-chain agent key from the recovered address
+    const agentKey = ethers.zeroPadValue(signerAddress, 32);
 
-    // 4. Check on-chain status (with cache)
-    const { isVerified, agentId } = await this.checkOnChain(pubkeyHash);
+    // 5. Check on-chain status (with cache)
+    const { isVerified, agentId } = await this.checkOnChain(agentKey);
 
     if (!isVerified) {
-      return { valid: false, pubkeyHash, agentId, error: "Agent not verified on-chain" };
+      return {
+        valid: false,
+        agentAddress: signerAddress,
+        agentKey,
+        agentId,
+        error: "Agent not verified on-chain",
+      };
     }
 
-    return { valid: true, pubkeyHash, agentId };
+    return { valid: true, agentAddress: signerAddress, agentKey, agentId };
   }
 
   /**
    * Check on-chain agent status with caching.
    */
   private async checkOnChain(
-    pubkeyHash: string
+    agentKey: string
   ): Promise<{ isVerified: boolean; agentId: bigint }> {
-    const cached = this.cache.get(pubkeyHash);
+    const cached = this.cache.get(agentKey);
     if (cached && cached.expiresAt > Date.now()) {
       return { isVerified: cached.isVerified, agentId: cached.agentId };
     }
 
     const [isVerified, agentId] = await Promise.all([
-      this.registry.isVerifiedAgent(pubkeyHash) as Promise<boolean>,
-      this.registry.getAgentId(pubkeyHash) as Promise<bigint>,
+      this.registry.isVerifiedAgent(agentKey) as Promise<boolean>,
+      this.registry.getAgentId(agentKey) as Promise<bigint>,
     ]);
 
-    this.cache.set(pubkeyHash, {
+    this.cache.set(agentKey, {
       isVerified,
       agentId,
       expiresAt: Date.now() + this.cacheTtlMs,
@@ -156,28 +179,21 @@ export class SelfAgentVerifier {
   /**
    * Express/Connect middleware that verifies agent requests.
    *
-   * Adds `req.agent` with `{ pubkeyHash, agentId }` on success.
+   * Adds `req.agent` with `{ address, agentKey, agentId }` on success.
    * Returns 401 on failure.
-   *
-   * Usage:
-   * ```ts
-   * app.use("/api/agents", verifier.expressMiddleware());
-   * ```
    */
   expressMiddleware() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return async (req: any, res: any, next: any) => {
-      const pubkeyHash = req.headers[HEADERS.PUBKEY];
       const signature = req.headers[HEADERS.SIGNATURE];
       const timestamp = req.headers[HEADERS.TIMESTAMP];
 
-      if (!pubkeyHash || !signature || !timestamp) {
+      if (!signature || !timestamp) {
         res.status(401).json({ error: "Missing agent authentication headers" });
         return;
       }
 
       const result = await this.verify({
-        pubkeyHash,
         signature,
         timestamp,
         method: req.method,
@@ -190,7 +206,11 @@ export class SelfAgentVerifier {
         return;
       }
 
-      req.agent = { pubkeyHash: result.pubkeyHash, agentId: result.agentId };
+      req.agent = {
+        address: result.agentAddress,
+        agentKey: result.agentKey,
+        agentId: result.agentId,
+      };
       next();
     };
   }

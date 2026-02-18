@@ -17,7 +17,10 @@ export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Request headers used by the signing protocol */
 export const HEADERS = {
-  PUBKEY: "x-self-agent-pubkey",
+  /** Agent's Ethereum address (informational — identity is recovered from signature) */
+  ADDRESS: "x-self-agent-address",
+  /** ECDSA signature over the request */
   SIGNATURE: "x-self-agent-signature",
+  /** Unix timestamp (milliseconds) for replay protection */
   TIMESTAMP: "x-self-agent-timestamp",
 } as const;

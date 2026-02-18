@@ -32,13 +32,19 @@ export default function ExplainerPage() {
       if (!key.startsWith("0x")) {
         key = "0x" + key;
       }
-      if (key.length !== 66) {
+
+      let keyHash: string;
+      if (key.length === 66) {
+        keyHash = key;
+      } else if (key.length === 42) {
+        keyHash = ethers.zeroPadValue(key, 32);
+      } else {
         setVerifyStatus("error");
-        setVerifyError("Invalid bytes32 key. Must be 66 characters (0x + 64 hex chars).");
+        setVerifyError("Enter an address (0x + 40 hex) or bytes32 key (0x + 64 hex).");
         return;
       }
 
-      const isVerified: boolean = await registry.isVerifiedAgent(key);
+      const isVerified: boolean = await registry.isVerifiedAgent(keyHash);
       setVerifyStatus(isVerified ? "verified" : "not-registered");
     } catch (err: unknown) {
       setVerifyStatus("error");
@@ -73,6 +79,14 @@ export default function ExplainerPage() {
             className="px-8 py-4 border-2 border-black rounded-lg text-lg font-medium hover:bg-gray-100 transition-colors text-center"
           >
             Read the Spec
+          </a>
+          <a
+            href="https://github.com/selfxyz/self-agent-id"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-8 py-4 border-2 border-gray-300 rounded-lg text-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors text-center"
+          >
+            GitHub
           </a>
         </div>
       </section>
@@ -122,8 +136,8 @@ export default function ExplainerPage() {
                   className="flex flex-col items-center gap-1 px-4 py-3 rounded-lg border border-gray-200 bg-white min-w-[140px]"
                 >
                   <span className="text-2xl">{step.icon}</span>
-                  <span className="font-semibold text-sm">{step.label}</span>
-                  <span className="text-xs text-gray-600">{step.sub}</span>
+                  <span className="font-semibold text-sm text-black">{step.label}</span>
+                  <span className="text-xs text-gray-800">{step.sub}</span>
                 </div>
               )
             )}
@@ -154,7 +168,7 @@ export default function ExplainerPage() {
                 className="border border-gray-200 rounded-lg p-5"
               >
                 <h3 className="font-bold mb-2">{prop.title}</h3>
-                <p className="text-sm text-gray-700 leading-relaxed">
+                <p className="text-sm text-gray-900 leading-relaxed">
                   {prop.desc}
                 </p>
               </div>
@@ -163,7 +177,108 @@ export default function ExplainerPage() {
         </div>
       </section>
 
-      {/* ───────────────────────── 4. Use Cases ───────────────────────── */}
+      {/* ───────────────────────── 4. Security Model ───────────────────────── */}
+      <section className="bg-gray-100 px-6 py-20">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12">Security Model</h2>
+
+          <div className="space-y-10">
+            {/* On-chain security */}
+            <div>
+              <h3 className="font-bold text-lg text-black mb-3">On-Chain: Agent Key Binding</h3>
+              <p className="text-gray-900 mb-4">
+                When a human scans the Self QR code, a ZK proof is generated from their
+                passport and verified on-chain by Hub V2. The registry then derives the
+                agent&apos;s on-chain key directly from the human&apos;s wallet address:
+              </p>
+              <div className="bg-white rounded-lg border border-gray-200 p-4 font-mono text-sm text-gray-900 mb-4">
+                agentKey = bytes32(uint256(uint160(walletAddress)))
+              </div>
+              <p className="text-gray-900">
+                Because the key is derived inside the contract callback (not passed by the user),
+                no one can register a key they don&apos;t own. The ZK proof binds the wallet
+                address to a unique human nullifier, and the contract binds that address to
+                the agent NFT. This chain is cryptographically enforced &mdash; there&apos;s
+                no way to spoof it.
+              </p>
+            </div>
+
+            {/* Off-chain security */}
+            <div>
+              <h3 className="font-bold text-lg text-black mb-3">Off-Chain: Request Signing</h3>
+              <p className="text-gray-900 mb-4">
+                The on-chain registry proves <em>&ldquo;this address is human-backed.&rdquo;</em>{" "}
+                But when an agent makes an API call, the service needs to prove{" "}
+                <em>&ldquo;this request actually came from that address.&rdquo;</em>{" "}
+                Without this, anyone could claim to be a registered agent.
+              </p>
+              <p className="text-gray-900 mb-4">
+                The SDK solves this with ECDSA request signing:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="font-bold text-sm text-black mb-2">Agent Side</p>
+                  <p className="text-sm text-gray-900">
+                    Signs each request with its private key. The signature covers the
+                    timestamp, HTTP method, URL, and body hash &mdash; preventing replay
+                    and tampering.
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="font-bold text-sm text-black mb-2">Service Side</p>
+                  <p className="text-sm text-gray-900">
+                    Recovers the signer address from the ECDSA signature (cryptographic,
+                    can&apos;t be faked), converts it to a bytes32 key, and checks{" "}
+                    <code className="bg-gray-100 px-1 rounded">isVerifiedAgent()</code>{" "}
+                    on-chain.
+                  </p>
+                </div>
+              </div>
+              <p className="text-gray-900">
+                The signer&apos;s identity is <strong>recovered from the signature itself</strong>,
+                never trusted from a header. This closes the off-chain verification gap
+                completely.
+              </p>
+            </div>
+
+            {/* Sybil resistance */}
+            <div>
+              <h3 className="font-bold text-lg text-black mb-3">Sybil Resistance</h3>
+              <p className="text-gray-900 mb-4">
+                Each human gets a unique, privacy-preserving nullifier derived from their
+                passport. The registry tracks how many agents share each nullifier.
+                Services can enforce their own limits:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="font-bold text-sm text-black mb-1">Strict (max 1)</p>
+                  <p className="text-xs text-gray-900">
+                    One agent per human. Best for governance voting, airdrops, and
+                    any context where uniqueness matters.
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="font-bold text-sm text-black mb-1">Moderate (max N)</p>
+                  <p className="text-xs text-gray-900">
+                    Allow a few agents per human. Good for agent marketplaces where
+                    one person might run multiple bots.
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="font-bold text-sm text-black mb-1">Detection only</p>
+                  <p className="text-xs text-gray-900">
+                    Allow unlimited but flag duplicates with{" "}
+                    <code className="bg-gray-100 px-1 rounded text-xs">sameHuman()</code>.
+                    Good for analytics and reputation.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────────────────────── 5. Use Cases ───────────────────────── */}
       <section className="bg-gray-100 px-6 py-20">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-10">Use Cases</h2>
@@ -190,10 +305,10 @@ export default function ExplainerPage() {
             <h3 className="text-xl font-bold mb-2">
               {useCases[activeUseCase].title}
             </h3>
-            <p className="text-gray-700 mb-3">
+            <p className="text-gray-900 mb-3">
               {useCases[activeUseCase].description}
             </p>
-            <p className="text-sm text-gray-600 italic mb-6">
+            <p className="text-sm text-gray-800 italic mb-6">
               {useCases[activeUseCase].flow}
             </p>
             <CodeBlock tabs={useCases[activeUseCase].snippets} />
@@ -222,12 +337,12 @@ export default function ExplainerPage() {
           <div className="border border-gray-200 rounded-xl p-6">
             <h3 className="font-bold text-lg mb-4">Verify an Agent</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Paste an agent public key (bytes32) to check its on-chain status.
+              Paste an agent address or bytes32 key to check its on-chain status.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
               <input
                 type="text"
-                placeholder="0x00...00 (bytes32)"
+                placeholder="0x... (address or bytes32)"
                 value={pubKeyInput}
                 onChange={(e) => {
                   setPubKeyInput(e.target.value);
@@ -270,44 +385,26 @@ export default function ExplainerPage() {
             Interface Specification
           </h2>
           <p className="text-center text-gray-700 mb-10">
-            Two interfaces define the standard. Any implementation must conform
-            to these function signatures.
+            This extension adds proof-of-human capabilities to the ERC-8004 Agent
+            Registry standard. The additions are shown below.
           </p>
 
           <div className="space-y-8">
             <div>
-              <h3 className="font-bold text-lg mb-3">IERC8004ProofOfHuman</h3>
+              <h3 className="font-bold text-lg mb-2 text-black">ERC-8004 Base Standard</h3>
+              <p className="text-sm text-gray-900 mb-3">
+                The base agent registry that every ERC-8004 implementation provides.
+              </p>
               <CodeBlock
                 tabs={[
                   {
                     label: "Solidity",
                     language: "solidity",
-                    code: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
-
-/// @title IERC8004ProofOfHuman
-/// @notice Registry that maps AI agents to human-backed proofs.
-interface IERC8004ProofOfHuman {
-    /// @notice Returns true if the agent has a verified human proof.
-    function isVerifiedAgent(bytes32 agentPubKey) external view returns (bool);
-
-    /// @notice Returns the token-ID for a given agent public key.
+                    code: `/// @title IERC8004 — Agent Registry (Base Standard)
+interface IERC8004 {
+    function registerAgent(bytes32 agentPubKey) external returns (uint256);
     function getAgentId(bytes32 agentPubKey) external view returns (uint256);
-
-    /// @notice Returns true if the given agent ID has a human proof.
-    function hasHumanProof(uint256 agentId) external view returns (bool);
-
-    /// @notice Returns the human nullifier for the given agent ID.
-    function getHumanNullifier(uint256 agentId) external view returns (uint256);
-
-    /// @notice Returns how many agents share the same human nullifier.
-    function getAgentCountForHuman(uint256 nullifier) external view returns (uint256);
-
-    /// @notice Returns true if two agent IDs share the same human.
-    function sameHuman(uint256 agentIdA, uint256 agentIdB) external view returns (bool);
-
-    /// @notice Returns the block timestamp when the agent was registered.
-    function agentRegisteredAt(uint256 agentId) external view returns (uint256);
+    function ownerOf(uint256 agentId) external view returns (address);
 }`,
                   },
                 ]}
@@ -315,26 +412,86 @@ interface IERC8004ProofOfHuman {
             </div>
 
             <div>
-              <h3 className="font-bold text-lg mb-3">IHumanProofProvider</h3>
+              <h3 className="font-bold text-lg mb-2 text-black">
+                Proof-of-Human Extension
+                <span className="ml-2 text-xs font-normal bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                  new
+                </span>
+              </h3>
+              <p className="text-sm text-gray-900 mb-3">
+                These functions are added on top of ERC-8004 to provide
+                human-verification guarantees. Any protocol can query these to
+                check if an agent is backed by a verified human.
+              </p>
               <CodeBlock
                 tabs={[
                   {
                     label: "Solidity",
                     language: "solidity",
-                    code: `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+                    code: `/// @title IERC8004ProofOfHuman — Extension Interface
+/// @notice Adds proof-of-human verification to ERC-8004 agents.
+interface IERC8004ProofOfHuman is IERC8004 {
+    // ── Registration ──────────────────────────────
+    function registerWithHumanProof(
+        string calldata agentMetadata,
+        address proofProvider,
+        bytes calldata proof,
+        bytes calldata providerData
+    ) external returns (uint256 agentId);
 
-/// @title IHumanProofProvider
-/// @notice Verifies a ZK proof and returns a human nullifier.
+    function revokeHumanProof(
+        uint256 agentId,
+        address proofProvider,
+        bytes calldata proof,
+        bytes calldata providerData
+    ) external;
+
+    // ── Verification (read by any service/contract) ─
+    function isVerifiedAgent(bytes32 agentPubKey) external view returns (bool);
+    function hasHumanProof(uint256 agentId) external view returns (bool);
+    function getHumanNullifier(uint256 agentId) external view returns (uint256);
+    function getProofProvider(uint256 agentId) external view returns (address);
+
+    // ── Sybil detection ───────────────────────────
+    function getAgentCountForHuman(uint256 nullifier) external view returns (uint256);
+    function sameHuman(uint256 a, uint256 b) external view returns (bool);
+}`,
+                  },
+                ]}
+              />
+            </div>
+
+            <div>
+              <h3 className="font-bold text-lg mb-2 text-black">
+                IHumanProofProvider
+                <span className="ml-2 text-xs font-normal bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                  new
+                </span>
+              </h3>
+              <p className="text-sm text-gray-900 mb-3">
+                Pluggable interface for identity verification backends. Self
+                Protocol is the reference provider; any ZK identity system can
+                implement this.
+              </p>
+              <CodeBlock
+                tabs={[
+                  {
+                    label: "Solidity",
+                    language: "solidity",
+                    code: `/// @title IHumanProofProvider
+/// @notice Pluggable identity backend for proof-of-human.
 interface IHumanProofProvider {
-    /// @notice Verifies the proof and returns the human nullifier.
-    /// @param proof The ZK proof bytes.
-    /// @param publicInputs The public inputs for the proof circuit.
-    /// @return nullifier A unique identifier for the human (not linkable to identity).
+    /// @notice Verify a ZK proof and return (success, nullifier).
     function verifyHumanProof(
         bytes calldata proof,
-        uint256[] calldata publicInputs
-    ) external view returns (uint256 nullifier);
+        bytes calldata providerData
+    ) external returns (bool verified, uint256 nullifier);
+
+    /// @notice Human-readable provider name (e.g. "Self Protocol").
+    function providerName() external view returns (string memory);
+
+    /// @notice Verification strength score (0-100).
+    function verificationStrength() external view returns (uint256);
 }`,
                   },
                 ]}
@@ -342,18 +499,29 @@ interface IHumanProofProvider {
             </div>
           </div>
 
-          <p className="text-center text-sm text-gray-600 mt-8">
-            View the deployed contract on{" "}
-            <a
-              href="https://celo-sepolia.blockscout.com/address/0x60651482a3033A72128f874623Fc790061cc46D4"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-black"
-            >
-              Blockscout
-            </a>
-            .
-          </p>
+          <div className="flex flex-col items-center gap-2 mt-8">
+            <p className="text-center text-sm text-gray-600">
+              View the reference implementation on{" "}
+              <a
+                href="https://github.com/selfxyz/self-agent-id"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-black"
+              >
+                GitHub
+              </a>{" "}
+              or the deployed contract on{" "}
+              <a
+                href="https://celo-sepolia.blockscout.com/address/0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-black"
+              >
+                Blockscout
+              </a>
+              .
+            </p>
+          </div>
         </div>
       </section>
 
@@ -384,6 +552,14 @@ interface IHumanProofProvider {
             <Link href="/" className="hover:text-black">
               Home
             </Link>
+            <a
+              href="https://github.com/selfxyz/self-agent-id"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-black"
+            >
+              GitHub
+            </a>
             <a
               href="https://ethereum-magicians.org"
               target="_blank"

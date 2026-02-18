@@ -1,6 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
+import { Highlight, themes } from "prism-react-renderer";
+
+// Map language labels to Prism-supported language names
+function toPrismLanguage(lang: string): string {
+  const map: Record<string, string> = {
+    solidity: "typescript", // closest syntax match with Prism built-ins
+    typescript: "typescript",
+    javascript: "javascript",
+    python: "python",
+    json: "json",
+    yaml: "yaml",
+    bash: "javascript",
+  };
+  return map[lang.toLowerCase()] || "typescript";
+}
 
 interface CodeTab {
   label: string;
@@ -22,17 +37,20 @@ export default function CodeBlock({ tabs }: CodeBlockProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const currentTab = tabs[activeTab];
+  const prismLang = toPrismLanguage(currentTab.language);
+
   return (
     <div className="w-full rounded-lg border border-gray-200 overflow-hidden">
-      <div className="flex border-b border-gray-200 bg-gray-50">
+      <div className="flex border-b border-gray-200 bg-[#1e1e2e]">
         {tabs.map((tab, i) => (
           <button
             key={tab.label}
             onClick={() => setActiveTab(i)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               i === activeTab
-                ? "bg-white text-black border-b-2 border-black"
-                : "text-gray-600 hover:text-gray-800"
+                ? "bg-[#313244] text-gray-100 border-b-2 border-blue-400"
+                : "text-gray-400 hover:text-gray-200"
             }`}
           >
             {tab.label}
@@ -41,15 +59,35 @@ export default function CodeBlock({ tabs }: CodeBlockProps) {
         <div className="ml-auto pr-2 flex items-center">
           <button
             onClick={handleCopy}
-            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+            className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 transition-colors"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
         </div>
       </div>
-      <pre className="p-4 overflow-x-auto text-sm leading-relaxed bg-gray-900 text-gray-100">
-        <code>{tabs[activeTab].code}</code>
-      </pre>
+      <Highlight
+        theme={themes.oneDark}
+        code={currentTab.code}
+        language={prismLang}
+      >
+        {({ style, tokens, getLineProps, getTokenProps }) => (
+          <pre
+            className="p-4 overflow-x-auto text-sm leading-relaxed"
+            style={{ ...style, margin: 0 }}
+          >
+            {tokens.map((line, i) => (
+              <div key={i} {...getLineProps({ line })}>
+                <span className="inline-block w-8 text-right mr-4 text-gray-500 select-none text-xs">
+                  {i + 1}
+                </span>
+                {line.map((token, key) => (
+                  <span key={key} {...getTokenProps({ token })} />
+                ))}
+              </div>
+            ))}
+          </pre>
+        )}
+      </Highlight>
     </div>
   );
 }

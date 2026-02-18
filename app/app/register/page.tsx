@@ -57,11 +57,6 @@ export default function RegisterPage() {
 
   const handleSuccess = () => {
     setStep("success");
-    // Agent key = zero-padded wallet address
-    const agentKey = ethers.zeroPadValue(walletAddress!, 32);
-    setTimeout(() => {
-      router.push("/verify?key=" + encodeURIComponent(agentKey));
-    }, 3000);
   };
 
   return (
@@ -126,9 +121,15 @@ export default function RegisterPage() {
               {walletAddress}
             </p>
           </div>
-          <p className="text-sm text-gray-600">
-            Redirecting to verification page...
-          </p>
+          <button
+            onClick={() => {
+              const agentKey = ethers.zeroPadValue(walletAddress!, 32);
+              router.push("/verify?key=" + encodeURIComponent(agentKey));
+            }}
+            className="px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+          >
+            Verify Agent
+          </button>
         </div>
       )}
     </main>

@@ -15,64 +15,87 @@ export interface UseCaseSnippets {
 // Agent-side snippets — shown to agent operators after registration
 // ============================================================
 
-export function getAgentSnippets(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _contractAddress?: string,
-): UseCaseSnippets[] {
+export function getAgentSnippets(): UseCaseSnippets[] {
   return [
     {
       title: "Sign Requests",
       description:
-        "Your agent signs every outgoing request with its private key using EIP-191. Services that support Self Agent ID will recover the signer and verify your agent on-chain.",
-      flow: "Set AGENT_PRIVATE_KEY \u2192 Agent signs each request \u2192 Service verifies automatically",
+        "Your agent signs every outgoing request with its private key. Services that support Self Agent ID verify your agent automatically.",
+      flow: "npm install @selfxyz/agent-sdk \u2192 Create SelfAgent \u2192 Use agent.fetch() \u2192 Service verifies automatically",
       snippets: [
         {
           label: "TypeScript",
           language: "typescript",
-          code: `import { ethers } from "ethers";
+          code: `import { SelfAgent } from "@selfxyz/agent-sdk";
 
-const agent = new ethers.Wallet(process.env.AGENT_PRIVATE_KEY);
+const agent = new SelfAgent({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+});
 
-async function signedFetch(url: string, init: RequestInit = {}) {
-  const ts = Date.now().toString();
-  const sig = await agent.signMessage(ts + (init.method ?? "GET") + url);
-
-  return fetch(url, {
-    ...init,
-    headers: {
-      ...init.headers,
-      "x-agent-address": agent.address,
-      "x-agent-sig": sig,
-      "x-agent-ts": ts,
-    },
-  });
-}
-
-// Usage — every request is signed automatically
-const res = await signedFetch("https://api.example.com/data", {
+// Every request is signed automatically
+const res = await agent.fetch("https://api.example.com/data", {
   method: "POST",
   body: JSON.stringify({ query: "test" }),
-});`,
+});
+
+// Check your own registration status
+const registered = await agent.isRegistered();`,
+        },
+        {
+          label: "Rust",
+          language: "rust",
+          code: `use alloy::signers::local::PrivateKeySigner;
+use alloy::primitives::keccak256;
+use reqwest::header::HeaderMap;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn sign_request(
+    signer: &PrivateKeySigner,
+    method: &str, url: &str, body: &str,
+) -> HeaderMap {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH).unwrap()
+        .as_millis().to_string();
+    let body_hash = keccak256(body.as_bytes());
+    let message = keccak256(
+        format!("{}{}{}{}", ts, method.to_uppercase(), url, body_hash)
+    );
+    let sig = signer.sign_message_sync(&message.0).unwrap();
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-self-agent-address",
+        format!("{}", signer.address()).parse().unwrap());
+    headers.insert("x-self-agent-signature",
+        format!("0x{}", hex::encode(sig.as_bytes())).parse().unwrap());
+    headers.insert("x-self-agent-timestamp",
+        ts.parse().unwrap());
+    headers
+}`,
         },
         {
           label: "Python",
           language: "python",
-          code: `import time, requests
+          code: `import time, requests, os, json
 from eth_account import Account
 from eth_account.messages import encode_defunct
+from web3 import Web3
 
-agent = Account.from_key(AGENT_PRIVATE_KEY)
+agent = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
 
 def signed_request(method: str, url: str, **kwargs):
     ts = str(int(time.time() * 1000))
-    message = encode_defunct(text=ts + method.upper() + url)
-    sig = agent.sign_message(message).signature.hex()
+    body = json.dumps(kwargs.get("json", "")) if "json" in kwargs else ""
+    body_hash = Web3.keccak(text=body).hex()
+    msg_hash = Web3.keccak(text=ts + method.upper() + url + body_hash)
+    sig = agent.sign_message(
+        encode_defunct(msg_hash)
+    ).signature.hex()
 
     headers = kwargs.pop("headers", {})
     headers.update({
-        "x-agent-address": agent.address,
-        "x-agent-sig": "0x" + sig,
-        "x-agent-ts": ts,
+        "x-self-agent-address": agent.address,
+        "x-self-agent-signature": "0x" + sig,
+        "x-self-agent-timestamp": ts,
     })
     return requests.request(method, url, headers=headers, **kwargs)
 
@@ -93,12 +116,10 @@ res = signed_request("POST", "https://api.example.com/data",
           language: "typescript",
           code: `import { ethers } from "ethers";
 
-const RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
-
 // Your agent wallet — fund this address with gas
 const wallet = new ethers.Wallet(
   process.env.AGENT_PRIVATE_KEY,
-  new ethers.JsonRpcProvider(RPC_URL)
+  new ethers.JsonRpcProvider("https://forno.celo-sepolia.celo-testnet.org")
 );
 
 console.log("Agent address:", wallet.address);
@@ -122,53 +143,37 @@ await tx.wait();
 // ============================================================
 
 export function getServiceSnippets(
-  contractAddress: string = "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251",
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _contractAddress?: string,
 ): UseCaseSnippets[] {
   return [
     {
       title: "Agent \u2192 Service",
       description:
-        "Verify that an AI agent calling your API is human-backed. Recover the signer from the EIP-191 signature, then check the on-chain registry. Sybil resistant: 1 agent per human by default.",
-      flow: "Extract headers \u2192 Check timestamp (replay protection) \u2192 Recover signer (EIP-191) \u2192 Verify on-chain",
+        "Verify that an AI agent calling your API is human-backed. Sybil resistant by default (1 agent per human). The SDK handles signature verification, on-chain checks, and caching.",
+      flow: "npm install @selfxyz/agent-sdk \u2192 Create verifier \u2192 Add middleware \u2192 Done",
       snippets: [
         {
-          label: "TypeScript",
+          label: "TypeScript (SDK)",
           language: "typescript",
-          code: `import { ethers } from "ethers";
+          code: `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
+import express from "express";
 
-const REGISTRY = "${contractAddress}";
-const RPC = "https://forno.celo-sepolia.celo-testnet.org";
-const REGISTRY_ABI = [
-  "function isVerifiedAgent(bytes32) view returns (bool)",
-  "function getAgentId(bytes32) view returns (uint256)",
-  "function getHumanNullifier(uint256) view returns (uint256)",
-  "function getAgentCountForHuman(uint256) view returns (uint256)",
-];
+const app = express();
+const verifier = new SelfAgentVerifier();
+// Sybil resistant by default (1 agent per human)
+// Uses Celo Sepolia registry — pass registryAddress for mainnet
 
-const provider = new ethers.JsonRpcProvider(RPC);
-const registry = new ethers.Contract(REGISTRY, REGISTRY_ABI, provider);
+// One-line middleware: verifies signature + on-chain status
+app.use("/api", verifier.expressMiddleware());
 
-async function verifyAgent(req: Request): Promise<boolean> {
-  const addr = req.headers.get("x-agent-address");
-  const sig = req.headers.get("x-agent-sig");
-  const ts = req.headers.get("x-agent-ts");
-  if (!addr || !sig || !ts) return false;
+// req.agent is available in all /api routes
+app.post("/api/data", (req, res) => {
+  console.log("Verified agent:", req.agent.address);
+  res.json({ ok: true });
+});
 
-  // Reject requests older than 5 minutes (replay protection)
-  if (Date.now() - Number(ts) > 5 * 60 * 1000) return false;
-
-  // Recover signer from EIP-191 signature
-  const recovered = ethers.verifyMessage(ts + req.method + req.url, sig);
-  if (recovered.toLowerCase() !== addr.toLowerCase()) return false;
-
-  // Check on-chain: verified + sybil resistant (1 per human)
-  const key = ethers.zeroPadValue(addr, 32);
-  if (!(await registry.isVerifiedAgent(key))) return false;
-  const id = await registry.getAgentId(key);
-  const nullifier = await registry.getHumanNullifier(id);
-  const count = await registry.getAgentCountForHuman(nullifier);
-  return count <= 1n;
-}`,
+// For non-Express frameworks, use verifier.verify() directly`,
         },
         {
           label: "Python",
@@ -180,6 +185,7 @@ from eth_account.messages import encode_defunct
 w3 = Web3(Web3.HTTPProvider(
     "https://forno.celo-sepolia.celo-testnet.org"
 ))
+REGISTRY = "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251"
 REGISTRY_ABI = [
     {"name": "isVerifiedAgent", "type": "function", "stateMutability": "view",
      "inputs": [{"type": "bytes32"}], "outputs": [{"type": "bool"}]},
@@ -190,13 +196,11 @@ REGISTRY_ABI = [
     {"name": "getAgentCountForHuman", "type": "function", "stateMutability": "view",
      "inputs": [{"type": "uint256"}], "outputs": [{"type": "uint256"}]},
 ]
-registry = w3.eth.contract(
-    address="${contractAddress}", abi=REGISTRY_ABI
-)
+registry = w3.eth.contract(address=REGISTRY, abi=REGISTRY_ABI)
 
 def verify_agent(address: str, signature: str, ts: str,
                  method: str, url: str) -> bool:
-    """Verify EIP-191 signature, on-chain status, and sybil resistance."""
+    """Verify signature, on-chain status, and sybil resistance."""
     if time.time() * 1000 - int(ts) > 5 * 60 * 1000:
         return False
     message = encode_defunct(text=ts + method + url)
@@ -211,47 +215,99 @@ def verify_agent(address: str, signature: str, ts: str,
     count = registry.functions.getAgentCountForHuman(nullifier).call()
     return count <= 1`,
         },
+        {
+          label: "Rust",
+          language: "rust",
+          code: `use alloy::primitives::{Address, FixedBytes, keccak256};
+use alloy::providers::ProviderBuilder;
+use alloy::sol;
+
+sol! {
+    #[sol(rpc)]
+    interface ISelfAgentRegistry {
+        function isVerifiedAgent(bytes32) external view returns (bool);
+        function getAgentId(bytes32) external view returns (uint256);
+        function getHumanNullifier(uint256) external view returns (uint256);
+        function getAgentCountForHuman(uint256) external view returns (uint256);
+    }
+}
+
+async fn verify_agent(
+    agent_address: Address,
+    signature: &[u8],
+    timestamp: &str,
+    method: &str,
+    url: &str,
+) -> bool {
+    // 1. Check timestamp freshness
+    let ts: u64 = timestamp.parse().unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+    if now - ts > 5 * 60 * 1000 { return false; }
+
+    // 2. Recover signer and verify it matches claimed address
+    let message = format!("{}{}{}", timestamp, method.to_uppercase(), url);
+    // ... recover signer from EIP-191 signature ...
+
+    // 3. Check on-chain
+    let provider = ProviderBuilder::new()
+        .on_http("https://forno.celo-sepolia.celo-testnet.org".parse().unwrap());
+    let registry = ISelfAgentRegistry::new(
+        "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251".parse().unwrap(),
+        &provider,
+    );
+    let key = FixedBytes::left_padding_from(&agent_address.0 .0);
+    if !registry.isVerifiedAgent(key).call().await.unwrap()._0 {
+        return false;
+    }
+    let id = registry.getAgentId(key).call().await.unwrap()._0;
+    let nullifier = registry.getHumanNullifier(id).call().await.unwrap()._0;
+    let count = registry.getAgentCountForHuman(nullifier).call().await.unwrap()._0;
+    count <= alloy::primitives::U256::from(1)
+}`,
+        },
       ],
     },
     {
       title: "Agent \u2192 Agent",
       description:
         "Verify a peer agent is human-backed and operated by a different human before collaborating. Prevents a single human from sybil-attacking your multi-agent system.",
-      flow: "Receive signed message \u2192 Verify EIP-191 signature \u2192 Check both agents on-chain \u2192 Ensure different humans",
+      flow: "Receive signed message \u2192 Verify via SDK \u2192 Check sameHuman() \u2192 Ensure different humans",
       snippets: [
         {
-          label: "TypeScript",
+          label: "TypeScript (SDK)",
           language: "typescript",
-          code: `import { ethers } from "ethers";
+          code: `import { SelfAgent, SelfAgentVerifier } from "@selfxyz/agent-sdk";
+import { ethers } from "ethers";
 
-const REGISTRY = "${contractAddress}";
-const RPC = "https://forno.celo-sepolia.celo-testnet.org";
-const REGISTRY_ABI = [
-  "function isVerifiedAgent(bytes32) view returns (bool)",
-  "function getAgentId(bytes32) view returns (uint256)",
-  "function sameHuman(uint256,uint256) view returns (bool)",
-];
+// My agent
+const me = new SelfAgent({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+});
 
-const provider = new ethers.JsonRpcProvider(RPC);
-const registry = new ethers.Contract(REGISTRY, REGISTRY_ABI, provider);
+// Verifier for incoming peer requests
+const verifier = new SelfAgentVerifier();
 
-async function verifyPeer(
-  peerAddr: string, sig: string, ts: string,
-  method: string, url: string, myAddr: string
-): Promise<boolean> {
-  if (Date.now() - Number(ts) > 5 * 60 * 1000) return false;
+async function verifyPeer(req: Request): Promise<boolean> {
+  const result = await verifier.verify({
+    signature: req.headers.get("x-self-agent-signature")!,
+    timestamp: req.headers.get("x-self-agent-timestamp")!,
+    method: req.method,
+    url: req.url,
+  });
+  if (!result.valid) return false;
 
-  const recovered = ethers.verifyMessage(ts + method + url, sig);
-  if (recovered.toLowerCase() !== peerAddr.toLowerCase()) return false;
-
-  const peerKey = ethers.zeroPadValue(peerAddr, 32);
-  const myKey = ethers.zeroPadValue(myAddr, 32);
-  if (!(await registry.isVerifiedAgent(peerKey))) return false;
-
-  // Ensure different humans (sybil resistance)
-  const peerId = await registry.getAgentId(peerKey);
-  const myId = await registry.getAgentId(myKey);
-  return !(await registry.sameHuman(peerId, myId));
+  // Ensure peer is a different human
+  const provider = new ethers.JsonRpcProvider(
+    "https://forno.celo-sepolia.celo-testnet.org"
+  );
+  const registry = new ethers.Contract(
+    "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251",
+    ["function sameHuman(uint256,uint256) view returns (bool)"],
+    provider,
+  );
+  const myInfo = await me.getInfo();
+  return !(await registry.sameHuman(myInfo.agentId, result.agentId));
 }`,
         },
         {
@@ -268,7 +324,7 @@ interface ISelfAgentRegistry {
 
 contract AgentCollaboration {
     ISelfAgentRegistry immutable registry =
-        ISelfAgentRegistry(${contractAddress});
+        ISelfAgentRegistry(0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251);
 
     modifier onlyMutuallyVerified(bytes32 agentA, bytes32 agentB) {
         require(registry.isVerifiedAgent(agentA), "Agent A not verified");
@@ -297,7 +353,7 @@ contract AgentCollaboration {
     {
       title: "Agent \u2192 Chain",
       description:
-        "Gate your smart contract so only human-backed agents can call it. The contract derives the agent key from msg.sender and checks the registry. Sybil resistant: 1 agent per human by default.",
+        "Gate your smart contract so only human-backed agents can call it. The contract derives the agent key from msg.sender and checks the registry. Sybil resistant: 1 agent per human.",
       flow: "Agent calls your contract \u2192 Modifier derives key from msg.sender \u2192 Checks registry + sybil \u2192 Executes",
       snippets: [
         {
@@ -315,7 +371,7 @@ interface ISelfAgentRegistry {
 
 contract MyProtocol {
     ISelfAgentRegistry immutable registry =
-        ISelfAgentRegistry(${contractAddress});
+        ISelfAgentRegistry(0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251);
 
     modifier onlyVerifiedAgent() {
         bytes32 agentKey = bytes32(uint256(uint160(msg.sender)));
@@ -344,9 +400,24 @@ contract MyProtocol {
     {
       title: "Custom Limits",
       description:
-        "By default, all snippets enforce 1 agent per human. Override this if your use case requires a human to operate multiple agents.",
-      flow: "Change the count limit \u2192 Or remove the sybil check entirely",
+        "By default, all snippets enforce 1 agent per human (sybil resistant). Override this if your use case requires a human to operate multiple agents.",
+      flow: "Change maxAgentsPerHuman in SDK config \u2192 Or change the Solidity modifier constant",
       snippets: [
+        {
+          label: "TypeScript (SDK)",
+          language: "typescript",
+          code: `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
+
+// Allow up to 5 agents per human:
+const verifier = new SelfAgentVerifier({
+  maxAgentsPerHuman: 5,
+});
+
+// Or disable sybil check entirely:
+const verifierNoLimit = new SelfAgentVerifier({
+  maxAgentsPerHuman: 0, // no limit
+});`,
+        },
         {
           label: "Solidity",
           language: "solidity",
@@ -370,29 +441,6 @@ modifier onlyVerifiedAgentNoLimit() {
     bytes32 agentKey = bytes32(uint256(uint160(msg.sender)));
     require(registry.isVerifiedAgent(agentKey), "Not verified");
     _;
-}`,
-        },
-        {
-          label: "TypeScript",
-          language: "typescript",
-          code: `// Change the count comparison in your verify function:
-
-const MAX_AGENTS_PER_HUMAN = 5; // your custom limit
-
-async function verifyAgent(address: string): Promise<boolean> {
-  const key = ethers.zeroPadValue(address, 32);
-  if (!(await registry.isVerifiedAgent(key))) return false;
-  const id = await registry.getAgentId(key);
-  const nullifier = await registry.getHumanNullifier(id);
-  const count = await registry.getAgentCountForHuman(nullifier);
-  return count <= BigInt(MAX_AGENTS_PER_HUMAN);
-}
-
-// Or skip the count check entirely:
-
-async function verifyAgentNoLimit(address: string): Promise<boolean> {
-  const key = ethers.zeroPadValue(address, 32);
-  return registry.isVerifiedAgent(key);
 }`,
         },
       ],

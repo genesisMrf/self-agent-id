@@ -272,7 +272,7 @@ export default function RegisterPage() {
             onClick={() => setStep("connect")}
             className="px-6 py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
           >
-            {mode === "simple" ? "Continue with Simple Mode" : "Continue with Advanced Mode"}
+            {mode === "simple" ? "Continue with Verified Wallet" : "Continue with Agent Identity"}
           </button>
         </div>
       )}
@@ -522,7 +522,7 @@ export default function RegisterPage() {
                 </p>
 
                 <div className="flex gap-2 mb-3">
-                  {getAgentSnippets(REGISTRY_ADDRESS).map((snippet, i) => (
+                  {getAgentSnippets().map((snippet, i) => (
                     <button
                       key={snippet.title}
                       onClick={() => setActiveAgentSnippet(i)}
@@ -538,7 +538,7 @@ export default function RegisterPage() {
                 </div>
 
                 {(() => {
-                  const snippets = getAgentSnippets(REGISTRY_ADDRESS);
+                  const snippets = getAgentSnippets();
                   const active = snippets[activeAgentSnippet];
                   return (
                     <>

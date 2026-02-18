@@ -9,6 +9,12 @@ export const REGISTRY_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
 ] as const;
 
+/** Default deployed SelfAgentRegistry on Celo Sepolia */
+export const DEFAULT_REGISTRY_ADDRESS = "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251";
+
+/** Default RPC URL (Celo Sepolia) */
+export const DEFAULT_RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
+
 /** Default signature validity window (5 minutes) */
 export const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000;
 

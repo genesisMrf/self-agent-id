@@ -22,4 +22,8 @@ export const REGISTRY_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function balanceOf(address owner) view returns (uint256)",
   "function scope() view returns (uint256)",
+  "function agentIdToPubkey(uint256 agentId) view returns (bytes32)",
+  "function agentHasHumanProof(uint256 agentId) view returns (bool)",
+  "function agentProofProvider(uint256 agentId) view returns (address)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ] as const;

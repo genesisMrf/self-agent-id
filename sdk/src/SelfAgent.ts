@@ -1,13 +1,18 @@
 import { ethers } from "ethers";
-import { REGISTRY_ABI, HEADERS } from "./constants";
+import {
+  REGISTRY_ABI,
+  HEADERS,
+  DEFAULT_REGISTRY_ADDRESS,
+  DEFAULT_RPC_URL,
+} from "./constants";
 
 export interface SelfAgentConfig {
   /** Agent's private key (hex, with or without 0x) */
   privateKey: string;
-  /** Deployed SelfAgentRegistry contract address */
-  registryAddress: string;
-  /** JSON-RPC URL for reading contract state */
-  rpcUrl: string;
+  /** Deployed SelfAgentRegistry contract address (default: Celo Sepolia) */
+  registryAddress?: string;
+  /** JSON-RPC URL for reading contract state (default: Celo Sepolia) */
+  rpcUrl?: string;
 }
 
 export interface AgentInfo {
@@ -46,10 +51,10 @@ export class SelfAgent {
   private _agentKey: string;
 
   constructor(config: SelfAgentConfig) {
-    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl ?? DEFAULT_RPC_URL);
     this.wallet = new ethers.Wallet(config.privateKey, provider);
     this.registry = new ethers.Contract(
-      config.registryAddress,
+      config.registryAddress ?? DEFAULT_REGISTRY_ADDRESS,
       REGISTRY_ABI,
       provider
     );

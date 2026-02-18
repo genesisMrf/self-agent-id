@@ -4,17 +4,21 @@ import {
   HEADERS,
   DEFAULT_MAX_AGE_MS,
   DEFAULT_CACHE_TTL_MS,
+  DEFAULT_REGISTRY_ADDRESS,
+  DEFAULT_RPC_URL,
 } from "./constants";
 
 export interface VerifierConfig {
-  /** Deployed SelfAgentRegistry contract address */
-  registryAddress: string;
-  /** JSON-RPC URL for reading contract state */
-  rpcUrl: string;
+  /** Deployed SelfAgentRegistry contract address (default: Celo Sepolia) */
+  registryAddress?: string;
+  /** JSON-RPC URL for reading contract state (default: Celo Sepolia) */
+  rpcUrl?: string;
   /** Max age for signed timestamps (default: 5 min) */
   maxAgeMs?: number;
   /** TTL for on-chain status cache (default: 5 min) */
   cacheTtlMs?: number;
+  /** Max agents allowed per human (default: 1 = sybil resistant). Set to 0 to disable. */
+  maxAgentsPerHuman?: number;
 }
 
 export interface VerificationResult {
@@ -24,12 +28,15 @@ export interface VerificationResult {
   /** The agent's on-chain key (bytes32) */
   agentKey: string;
   agentId: bigint;
+  /** Number of agents registered by the same human */
+  agentCount: bigint;
   error?: string;
 }
 
 interface CacheEntry {
   isVerified: boolean;
   agentId: bigint;
+  agentCount: bigint;
   expiresAt: number;
 }
 
@@ -70,17 +77,19 @@ export class SelfAgentVerifier {
   private registry: ethers.Contract;
   private maxAgeMs: number;
   private cacheTtlMs: number;
+  private maxAgentsPerHuman: number;
   private cache = new Map<string, CacheEntry>();
 
-  constructor(config: VerifierConfig) {
-    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+  constructor(config: VerifierConfig = {}) {
+    const provider = new ethers.JsonRpcProvider(config.rpcUrl ?? DEFAULT_RPC_URL);
     this.registry = new ethers.Contract(
-      config.registryAddress,
+      config.registryAddress ?? DEFAULT_REGISTRY_ADDRESS,
       REGISTRY_ABI,
       provider
     );
     this.maxAgeMs = config.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
     this.cacheTtlMs = config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+    this.maxAgentsPerHuman = config.maxAgentsPerHuman ?? 1;
   }
 
   /**
@@ -102,6 +111,7 @@ export class SelfAgentVerifier {
       agentAddress: ethers.ZeroAddress,
       agentKey: ethers.ZeroHash,
       agentId: 0n,
+      agentCount: 0n,
     };
 
     // 1. Check timestamp freshness (replay protection)
@@ -131,7 +141,7 @@ export class SelfAgentVerifier {
     const agentKey = ethers.zeroPadValue(signerAddress, 32);
 
     // 5. Check on-chain status (with cache)
-    const { isVerified, agentId } = await this.checkOnChain(agentKey);
+    const { isVerified, agentId, agentCount } = await this.checkOnChain(agentKey);
 
     if (!isVerified) {
       return {
@@ -139,11 +149,24 @@ export class SelfAgentVerifier {
         agentAddress: signerAddress,
         agentKey,
         agentId,
+        agentCount,
         error: "Agent not verified on-chain",
       };
     }
 
-    return { valid: true, agentAddress: signerAddress, agentKey, agentId };
+    // 6. Sybil resistance: reject if human has too many agents
+    if (this.maxAgentsPerHuman > 0 && agentCount > BigInt(this.maxAgentsPerHuman)) {
+      return {
+        valid: false,
+        agentAddress: signerAddress,
+        agentKey,
+        agentId,
+        agentCount,
+        error: `Human has ${agentCount} agents (max ${this.maxAgentsPerHuman})`,
+      };
+    }
+
+    return { valid: true, agentAddress: signerAddress, agentKey, agentId, agentCount };
   }
 
   /**
@@ -151,10 +174,10 @@ export class SelfAgentVerifier {
    */
   private async checkOnChain(
     agentKey: string
-  ): Promise<{ isVerified: boolean; agentId: bigint }> {
+  ): Promise<{ isVerified: boolean; agentId: bigint; agentCount: bigint }> {
     const cached = this.cache.get(agentKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return { isVerified: cached.isVerified, agentId: cached.agentId };
+      return { isVerified: cached.isVerified, agentId: cached.agentId, agentCount: cached.agentCount };
     }
 
     const [isVerified, agentId] = await Promise.all([
@@ -162,13 +185,21 @@ export class SelfAgentVerifier {
       this.registry.getAgentId(agentKey) as Promise<bigint>,
     ]);
 
+    // Fetch sybil data if agent exists and sybil check is enabled
+    let agentCount = 0n;
+    if (agentId > 0n && this.maxAgentsPerHuman > 0) {
+      const nullifier: bigint = await this.registry.getHumanNullifier(agentId);
+      agentCount = await this.registry.getAgentCountForHuman(nullifier);
+    }
+
     this.cache.set(agentKey, {
       isVerified,
       agentId,
+      agentCount,
       expiresAt: Date.now() + this.cacheTtlMs,
     });
 
-    return { isVerified, agentId };
+    return { isVerified, agentId, agentCount };
   }
 
   /** Clear the on-chain status cache */

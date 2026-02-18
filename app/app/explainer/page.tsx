@@ -56,13 +56,13 @@ export default function ExplainerPage() {
     <main className="min-h-screen font-[family-name:var(--font-inter)]">
       {/* ───────────────────────── 1. Hero ───────────────────────── */}
       <section className="flex flex-col items-center justify-center text-center px-6 py-24 md:py-32">
-        <p className="text-sm font-semibold tracking-widest uppercase text-gray-600 mb-3">
+        <p className="text-sm font-semibold tracking-widest uppercase text-black mb-3">
           Proposed Extension to ERC-8004
         </p>
         <h1 className="text-5xl md:text-6xl font-bold max-w-3xl leading-tight mb-6">
           Proof-of-Human for AI&nbsp;Agents
         </h1>
-        <p className="text-lg text-gray-700 max-w-2xl mb-10">
+        <p className="text-lg text-black max-w-2xl mb-10">
           A composable, privacy-preserving standard that lets any smart contract
           or service verify an AI agent is operated by a real, unique human
           &mdash; without revealing who that human is.
@@ -84,7 +84,7 @@ export default function ExplainerPage() {
             href="https://github.com/selfxyz/self-agent-id"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-8 py-4 border-2 border-gray-300 rounded-lg text-lg font-medium text-gray-700 hover:bg-gray-100 transition-colors text-center"
+            className="px-8 py-4 border-2 border-black rounded-lg text-lg font-medium text-black hover:bg-gray-100 transition-colors text-center"
           >
             GitHub
           </a>
@@ -180,53 +180,121 @@ export default function ExplainerPage() {
       {/* ───────────────────────── 4. Security Model ───────────────────────── */}
       <section className="bg-gray-100 px-6 py-20">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12">Security Model</h2>
+          <h2 className="text-3xl font-bold text-center mb-4">Security Model</h2>
+          <p className="text-center text-black max-w-2xl mx-auto mb-12">
+            The registry supports two registration modes. Both produce the same
+            on-chain result &mdash; a verified, sybil-resistant agent NFT &mdash;
+            but they differ in who holds the agent&apos;s private key.
+          </p>
 
-          <div className="space-y-10">
-            {/* On-chain security */}
-            <div>
-              <h3 className="font-bold text-lg text-black mb-3">On-Chain: Agent Key Binding</h3>
-              <p className="text-gray-900 mb-4">
-                When a human scans the Self QR code, a ZK proof is generated from their
-                passport and verified on-chain by Hub V2. The registry then derives the
-                agent&apos;s on-chain key directly from the human&apos;s wallet address:
-              </p>
-              <div className="bg-white rounded-lg border border-gray-200 p-4 font-mono text-sm text-gray-900 mb-4">
-                agentKey = bytes32(uint256(uint160(walletAddress)))
+          {/* Two modes side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            {/* Simple Mode */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xl">👤</span>
+                <h3 className="font-bold text-lg text-black">Simple Mode</h3>
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                  live
+                </span>
               </div>
-              <p className="text-gray-900">
-                Because the key is derived inside the contract callback (not passed by the user),
-                no one can register a key they don&apos;t own. The ZK proof binds the wallet
-                address to a unique human nullifier, and the contract binds that address to
-                the agent NFT. This chain is cryptographically enforced &mdash; there&apos;s
-                no way to spoof it.
+              <p className="text-sm text-black font-medium mb-2">
+                Wallet = Agent Identity
               </p>
+              <p className="text-sm text-black mb-4">
+                The human&apos;s Self wallet address becomes the agent key. No extra
+                keypair to manage &mdash; ideal for single-agent setups and quick
+                integrations.
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                <p className="text-xs font-mono text-black">
+                  agentKey = bytes32(uint256(uint160(<span className="text-green-700">walletAddress</span>)))
+                </p>
+              </div>
+              <div className="space-y-2 text-sm text-black">
+                <p className="font-bold text-black">How it&apos;s secured:</p>
+                <ul className="list-disc list-inside space-y-1 text-black">
+                  <li>Key is derived <em>inside</em> the contract callback &mdash; can&apos;t be spoofed</li>
+                  <li>ZK proof binds wallet address to human nullifier</li>
+                  <li>Off-chain: SDK signs requests with wallet key; services recover signer from ECDSA signature</li>
+                </ul>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs text-black">
+                  <strong>Best for:</strong> Single agent per user, quick setup, on-chain
+                  gating where <code className="bg-gray-100 px-1 rounded">msg.sender</code> is
+                  the agent.
+                </p>
+              </div>
             </div>
 
-            {/* Off-chain security */}
+            {/* Advanced Mode */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xl">🔑</span>
+                <h3 className="font-bold text-lg text-black">Advanced Mode</h3>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                  v2
+                </span>
+              </div>
+              <p className="text-sm text-black font-medium mb-2">
+                Independent Agent Key
+              </p>
+              <p className="text-sm text-black mb-4">
+                The agent generates its own keypair. During registration, the agent
+                signs a challenge proving it controls the key. The human proves humanity
+                via Self, and the agent proves key ownership via ECDSA &mdash; both in
+                a single QR scan.
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                <p className="text-xs font-mono text-black">
+                  agentKey = bytes32(uint256(uint160(<span className="text-blue-700">agentAddress</span>)))
+                </p>
+              </div>
+              <div className="space-y-2 text-sm text-black">
+                <p className="font-bold text-black">How it&apos;s secured:</p>
+                <ul className="list-disc list-inside space-y-1 text-black">
+                  <li>ECDSA signature in registration proves agent key ownership</li>
+                  <li>ZK proof binds human identity to nullifier</li>
+                  <li>Off-chain: agent signs requests with its <em>own</em> key &mdash; human wallet never exposed</li>
+                </ul>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs text-black">
+                  <strong>Best for:</strong> Multiple agents per user, key rotation,
+                  delegation, autonomous agents that operate independently.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Shared security layers */}
+          <div className="space-y-10">
             <div>
               <h3 className="font-bold text-lg text-black mb-3">Off-Chain: Request Signing</h3>
-              <p className="text-gray-900 mb-4">
+              <p className="text-black mb-4">
                 The on-chain registry proves <em>&ldquo;this address is human-backed.&rdquo;</em>{" "}
                 But when an agent makes an API call, the service needs to prove{" "}
                 <em>&ldquo;this request actually came from that address.&rdquo;</em>{" "}
                 Without this, anyone could claim to be a registered agent.
               </p>
-              <p className="text-gray-900 mb-4">
-                The SDK solves this with ECDSA request signing:
+              <p className="text-black mb-4">
+                The SDK solves this with ECDSA request signing. In both modes, the
+                flow is the same:
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <p className="font-bold text-sm text-black mb-2">Agent Side</p>
-                  <p className="text-sm text-gray-900">
-                    Signs each request with its private key. The signature covers the
+                  <p className="text-sm text-black">
+                    Signs each request with the agent&apos;s private key (wallet key in simple
+                    mode, independent key in advanced mode). The signature covers the
                     timestamp, HTTP method, URL, and body hash &mdash; preventing replay
                     and tampering.
                   </p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <p className="font-bold text-sm text-black mb-2">Service Side</p>
-                  <p className="text-sm text-gray-900">
+                  <p className="text-sm text-black">
                     Recovers the signer address from the ECDSA signature (cryptographic,
                     can&apos;t be faked), converts it to a bytes32 key, and checks{" "}
                     <code className="bg-gray-100 px-1 rounded">isVerifiedAgent()</code>{" "}
@@ -234,7 +302,7 @@ export default function ExplainerPage() {
                   </p>
                 </div>
               </div>
-              <p className="text-gray-900">
+              <p className="text-black">
                 The signer&apos;s identity is <strong>recovered from the signature itself</strong>,
                 never trusted from a header. This closes the off-chain verification gap
                 completely.
@@ -244,7 +312,7 @@ export default function ExplainerPage() {
             {/* Sybil resistance */}
             <div>
               <h3 className="font-bold text-lg text-black mb-3">Sybil Resistance</h3>
-              <p className="text-gray-900 mb-4">
+              <p className="text-black mb-4">
                 Each human gets a unique, privacy-preserving nullifier derived from their
                 passport. The registry tracks how many agents share each nullifier.
                 Services can enforce their own limits:
@@ -252,21 +320,21 @@ export default function ExplainerPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <p className="font-bold text-sm text-black mb-1">Strict (max 1)</p>
-                  <p className="text-xs text-gray-900">
+                  <p className="text-xs text-black">
                     One agent per human. Best for governance voting, airdrops, and
                     any context where uniqueness matters.
                   </p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <p className="font-bold text-sm text-black mb-1">Moderate (max N)</p>
-                  <p className="text-xs text-gray-900">
+                  <p className="text-xs text-black">
                     Allow a few agents per human. Good for agent marketplaces where
                     one person might run multiple bots.
                   </p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <p className="font-bold text-sm text-black mb-1">Detection only</p>
-                  <p className="text-xs text-gray-900">
+                  <p className="text-xs text-black">
                     Allow unlimited but flag duplicates with{" "}
                     <code className="bg-gray-100 px-1 rounded text-xs">sameHuman()</code>.
                     Good for analytics and reputation.
@@ -292,7 +360,7 @@ export default function ExplainerPage() {
                 className={`px-5 py-2 rounded-full text-sm font-medium transition-colors ${
                   i === activeUseCase
                     ? "bg-black text-white"
-                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                    : "bg-white text-black border border-gray-300 hover:bg-gray-50"
                 }`}
               >
                 {uc.title}
@@ -302,13 +370,13 @@ export default function ExplainerPage() {
 
           {/* Active card */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 md:p-8">
-            <h3 className="text-xl font-bold mb-2">
+            <h3 className="text-xl font-bold text-black mb-2">
               {useCases[activeUseCase].title}
             </h3>
-            <p className="text-gray-900 mb-3">
+            <p className="text-black mb-3">
               {useCases[activeUseCase].description}
             </p>
-            <p className="text-sm text-gray-800 italic mb-6">
+            <p className="text-sm text-black italic mb-6">
               {useCases[activeUseCase].flow}
             </p>
             <CodeBlock tabs={useCases[activeUseCase].snippets} />
@@ -320,7 +388,7 @@ export default function ExplainerPage() {
       <section id="demo" className="px-6 py-20">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-4">Live Demo</h2>
-          <p className="text-center text-gray-700 mb-10">
+          <p className="text-center text-black mb-10">
             Register a new agent or verify an existing one on Celo Sepolia.
           </p>
 
@@ -336,7 +404,7 @@ export default function ExplainerPage() {
           {/* Inline verify widget */}
           <div className="border border-gray-200 rounded-xl p-6">
             <h3 className="font-bold text-lg mb-4">Verify an Agent</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-black mb-4">
               Paste an agent address or bytes32 key to check its on-chain status.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -384,7 +452,7 @@ export default function ExplainerPage() {
           <h2 className="text-3xl font-bold text-center mb-4">
             Interface Specification
           </h2>
-          <p className="text-center text-gray-700 mb-10">
+          <p className="text-center text-black mb-10">
             This extension adds proof-of-human capabilities to the ERC-8004 Agent
             Registry standard. The additions are shown below.
           </p>
@@ -500,7 +568,7 @@ interface IHumanProofProvider {
           </div>
 
           <div className="flex flex-col items-center gap-2 mt-8">
-            <p className="text-center text-sm text-gray-600">
+            <p className="text-center text-sm text-black">
               View the reference implementation on{" "}
               <a
                 href="https://github.com/selfxyz/self-agent-id"
@@ -527,7 +595,7 @@ interface IHumanProofProvider {
 
       {/* ───────────────────────── 7. Footer ───────────────────────── */}
       <footer className="border-t border-gray-200 px-6 py-10">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-gray-600">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-black">
           <p>
             Built on{" "}
             <a

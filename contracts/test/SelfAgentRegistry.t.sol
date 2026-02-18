@@ -301,6 +301,68 @@ contract SelfAgentRegistryTest is Test {
     }
 
     // ====================================================
+    // String-Encoded userDefinedData (Self SDK sends UTF-8 strings)
+    // Format: "R" + 64 hex chars (register) or "D" + 64 hex chars (deregister)
+    // ====================================================
+
+    function _bytes32ToHexString(bytes32 value) internal pure returns (string memory) {
+        bytes memory hexChars = "0123456789abcdef";
+        bytes memory str = new bytes(64);
+        for (uint256 i = 0; i < 32; i++) {
+            str[i * 2] = hexChars[uint8(value[i]) >> 4];
+            str[i * 2 + 1] = hexChars[uint8(value[i]) & 0x0f];
+        }
+        return string(str);
+    }
+
+    function _registerViaHubString(address humanAddr, uint256 nullifier, bytes32 agentPubKey) internal {
+        bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
+        bytes memory userData = abi.encodePacked("R", _bytes32ToHexString(agentPubKey));
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(encodedOutput, userData);
+    }
+
+    function _deregisterViaHubString(address humanAddr, uint256 nullifier, bytes32 agentPubKey) internal {
+        bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
+        bytes memory userData = abi.encodePacked("D", _bytes32ToHexString(agentPubKey));
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(encodedOutput, userData);
+    }
+
+    function test_RegisterAgent_StringEncoding() public {
+        _registerViaHubString(human1, nullifier1, agentKey1);
+
+        uint256 agentId = registry.getAgentId(agentKey1);
+        assertEq(agentId, 1);
+        assertTrue(registry.isVerifiedAgent(agentKey1));
+        assertEq(registry.ownerOf(agentId), human1);
+    }
+
+    function test_DeregisterAgent_StringEncoding() public {
+        _registerViaHubString(human1, nullifier1, agentKey1);
+        assertTrue(registry.isVerifiedAgent(agentKey1));
+
+        _deregisterViaHubString(human1, nullifier1, agentKey1);
+        assertFalse(registry.isVerifiedAgent(agentKey1));
+    }
+
+    function test_StringAndBinaryEncoding_SameResult() public {
+        // Register with string encoding
+        _registerViaHubString(human1, nullifier1, agentKey1);
+        uint256 agentId1 = registry.getAgentId(agentKey1);
+
+        // Register with binary encoding
+        _registerViaHub(human2, nullifier2, agentKey2);
+        uint256 agentId2 = registry.getAgentId(agentKey2);
+
+        // Both should work and produce valid registrations
+        assertTrue(registry.isVerifiedAgent(agentKey1));
+        assertTrue(registry.isVerifiedAgent(agentKey2));
+        assertEq(agentId1, 1);
+        assertEq(agentId2, 2);
+    }
+
+    // ====================================================
     // Synchronous Path — registerWithHumanProof
     // ====================================================
 

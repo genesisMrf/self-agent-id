@@ -55,8 +55,9 @@ export default function RegisterPage() {
       keyBytes = ethers.keccak256(ethers.toUtf8Bytes(agentPubKey));
     }
 
-    // userDefinedData = action byte (0x01 = register) + 32-byte agent public key
-    const userDefinedData = "0x01" + keyBytes.slice(2);
+    // userDefinedData = "R" + 64-char hex pubkey (no 0x prefix)
+    // Self SDK passes this as a UTF-8 string, so we use string encoding
+    const userDefinedData = "R" + keyBytes.slice(2);
 
     const app = new SelfAppBuilder({
       version: 2,
@@ -83,7 +84,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-6 font-[family-name:var(--font-geist-sans)]">
+    <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-6 font-[family-name:var(--font-inter)]">
       <h1 className="text-3xl font-bold">Register Agent</h1>
 
       {step === "connect" && (

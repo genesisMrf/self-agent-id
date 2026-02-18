@@ -160,7 +160,7 @@ function VerifyContent() {
 
 export default function VerifyPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-6 font-[family-name:var(--font-geist-sans)]">
+    <main className="min-h-screen flex flex-col items-center justify-center p-8 gap-6 font-[family-name:var(--font-inter)]">
       <h1 className="text-3xl font-bold">Verify Agent</h1>
       <p className="text-gray-600 text-center max-w-md">
         Check if an AI agent is registered and backed by a verified human.

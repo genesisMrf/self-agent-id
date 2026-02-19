@@ -657,11 +657,14 @@ const registered = await agent.isRegistered();${extra}`;
 
 function buildTestSetupTS(): string {
   return `import { SelfAgent } from "@selfxyz/agent-sdk";
+import { ethers } from "ethers";
 
 const REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b";
 const RPC = "https://forno.celo-sepolia.celo-testnet.org";
 const DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app";
 const DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app";
+const DEMO_APP = "https://agent-id.self.xyz"; // chain-verify relayer
+const VERIFIER = "0xD8ec054FD869A762bC977AC328385142303c7def";
 
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY!,
@@ -711,27 +714,63 @@ async function runTests() {
   const peer = await peerRes.json();
   console.log("Demo agent verified you:", peer.verified);
   console.log("Same human:", peer.sameHuman);
-  console.log("Demo agent:", peer.demoAgent?.address);
-  // Response is signed — check x-self-agent-signature header
   console.log("Response signed:", !!peerRes.headers.get("x-self-agent-signature"));
   console.log();
 
-  console.log("All tests passed!");
+  // Test 3: Agent → Chain (EIP-712 meta-transaction)
+  console.log("--- Test 3: Agent → Chain ---");
+  const provider = new ethers.JsonRpcProvider(RPC);
+  const verifier = new ethers.Contract(VERIFIER, [
+    "function nonces(bytes32) view returns (uint256)",
+  ], provider);
+
+  const agentKey = ethers.zeroPadValue(agent.address, 32);
+  const nonce = await verifier.nonces(agentKey);
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+
+  const wallet = new ethers.Wallet(process.env.AGENT_PRIVATE_KEY!);
+  const sig = await wallet.signTypedData(
+    { name: "AgentDemoVerifier", version: "1",
+      chainId: 11142220n, verifyingContract: VERIFIER },
+    { MetaVerify: [
+      { name: "agentKey", type: "bytes32" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ]},
+    { agentKey, nonce, deadline },
+  );
+
+  const chainRes = await agent.fetch(DEMO_APP + "/api/demo/chain-verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agentKey, nonce: nonce.toString(), deadline, eip712Signature: sig,
+    }),
+  });
+  const chain = await chainRes.json();
+  console.log("Tx:", chain.txHash);
+  console.log("Block:", chain.blockNumber);
+  console.log("Explorer:", chain.explorerUrl);
+  console.log();
+
+  console.log("All 3 tests passed!");
 }
 
 runTests().catch(console.error);`;
 }
 
 function buildTestSetupPython(): string {
-  return `import time, json, os, requests
+  return `import time, json, os, requests, struct
 from web3 import Web3
 from eth_account import Account
-from eth_account.messages import encode_defunct
+from eth_account.messages import encode_defunct, encode_structured_data
 
 REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"
 RPC = "https://forno.celo-sepolia.celo-testnet.org"
 DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
 DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
+DEMO_APP = "https://agent-id.self.xyz"
+VERIFIER = "0xD8ec054FD869A762bC977AC328385142303c7def"
 
 agent = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
 w3 = Web3(Web3.HTTPProvider(RPC))
@@ -780,49 +819,132 @@ peer = r4.json()
 print(f"Verified: {peer.get('verified')} Same human: {peer.get('sameHuman')}")
 print(f"Response signed: {'x-self-agent-signature' in r4.headers}")
 
-print("\\nAll tests passed!")`;
+# Test 3: Agent → Chain (EIP-712 meta-transaction)
+print("\\n--- Test 3: Agent → Chain ---")
+verifier_abi = [{"name": "nonces", "type": "function",
+    "stateMutability": "view",
+    "inputs": [{"type": "bytes32"}], "outputs": [{"type": "uint256"}]}]
+verifier = w3.eth.contract(address=VERIFIER, abi=verifier_abi)
+agent_key = b"\\x00" * 12 + bytes.fromhex(agent.address[2:])
+nonce = verifier.functions.nonces(agent_key).call()
+deadline = int(time.time()) + 300
+
+typed_data = {
+    "types": {
+        "EIP712Domain": [
+            {"name": "name", "type": "string"},
+            {"name": "version", "type": "string"},
+            {"name": "chainId", "type": "uint256"},
+            {"name": "verifyingContract", "type": "address"},
+        ],
+        "MetaVerify": [
+            {"name": "agentKey", "type": "bytes32"},
+            {"name": "nonce", "type": "uint256"},
+            {"name": "deadline", "type": "uint256"},
+        ],
+    },
+    "primaryType": "MetaVerify",
+    "domain": {
+        "name": "AgentDemoVerifier", "version": "1",
+        "chainId": 11142220,
+        "verifyingContract": VERIFIER,
+    },
+    "message": {
+        "agentKey": agent_key,
+        "nonce": nonce,
+        "deadline": deadline,
+    },
+}
+sig712 = agent.sign_message(
+    encode_structured_data(typed_data)
+).signature.hex()
+
+body5 = json.dumps({
+    "agentKey": "0x" + agent_key.hex(),
+    "nonce": str(nonce), "deadline": deadline,
+    "eip712Signature": "0x" + sig712,
+})
+headers5 = {**sign_request("POST", DEMO_APP + "/api/demo/chain-verify", body5),
+            "Content-Type": "application/json"}
+r5 = requests.post(DEMO_APP + "/api/demo/chain-verify",
+                    headers=headers5, data=body5)
+chain = r5.json()
+print(f"Tx: {chain.get('txHash')}")
+print(f"Block: {chain.get('blockNumber')}")
+print(f"Explorer: {chain.get('explorerUrl')}")
+
+print("\\nAll 3 tests passed!")`;
 }
 
 function buildTestSetupBash(): string {
   return `#!/bin/bash
-# Run Self Agent ID demo tests with curl
-# Requires: AGENT_PRIVATE_KEY env var, node for signing
-# Install: npm install -g @selfxyz/agent-sdk
+# Run Self Agent ID demo tests
+# Requires: AGENT_PRIVATE_KEY env var, node + npm
+# Install SDK: npm install @selfxyz/agent-sdk ethers
 
-REGISTRY="0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"
 DEMO_SERVICE="https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
 DEMO_AGENT="https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
+DEMO_APP="https://agent-id.self.xyz"
 
-# Quick test: hit the health endpoints (no auth needed)
+# Quick test: health endpoints (no auth needed)
 echo "--- Health Checks ---"
 curl -s "$DEMO_SERVICE/health" | jq .
 curl -s "$DEMO_AGENT/health" | jq .
 
-# For authenticated tests, use the TypeScript or Python scripts above,
-# or use this one-liner with npx:
+# Full test suite (all 3 tests including on-chain)
 echo ""
-echo "--- Run Full Test Suite ---"
+echo "--- Full Test Suite (3 tests) ---"
 npx tsx -e "
 const { SelfAgent } = require('@selfxyz/agent-sdk');
+const { ethers } = require('ethers');
+
+const REGISTRY = '0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b';
+const VERIFIER = '0xD8ec054FD869A762bC977AC328385142303c7def';
+const RPC = 'https://forno.celo-sepolia.celo-testnet.org';
+
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY,
-  registryAddress: '$REGISTRY',
-  rpcUrl: 'https://forno.celo-sepolia.celo-testnet.org',
+  registryAddress: REGISTRY, rpcUrl: RPC,
 });
+
 (async () => {
   console.log('Agent:', agent.address);
+
+  // Test 1: Agent → Service
   const r = await agent.fetch('$DEMO_SERVICE/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ action: 'test' }),
   });
-  console.log('Result:', await r.json());
+  console.log('Test 1 (Service):', await r.json());
+
+  // Test 2: Agent → Agent
   const p = await agent.fetch('$DEMO_AGENT', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ action: 'peer-verify' }),
   });
-  console.log('Peer:', await p.json());
+  console.log('Test 2 (Agent):', await p.json());
+
+  // Test 3: Agent → Chain
+  const provider = new ethers.JsonRpcProvider(RPC);
+  const v = new ethers.Contract(VERIFIER,
+    ['function nonces(bytes32) view returns (uint256)'], provider);
+  const key = ethers.zeroPadValue(agent.address, 32);
+  const nonce = await v.nonces(key);
+  const deadline = Math.floor(Date.now()/1000) + 300;
+  const wallet = new ethers.Wallet(process.env.AGENT_PRIVATE_KEY);
+  const sig = await wallet.signTypedData(
+    {name:'AgentDemoVerifier',version:'1',
+     chainId:11142220n,verifyingContract:VERIFIER},
+    {MetaVerify:[{name:'agentKey',type:'bytes32'},
+     {name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]},
+    {agentKey:key,nonce,deadline});
+  const c = await agent.fetch('$DEMO_APP/api/demo/chain-verify', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({agentKey:key,nonce:nonce.toString(),
+      deadline,eip712Signature:sig}),
+  });
+  console.log('Test 3 (Chain):', await c.json());
+  console.log('All 3 tests passed!');
 })();
 "`;
 }
@@ -998,17 +1120,6 @@ export function getAgentSnippets(features?: Set<string>): UseCaseSnippets[] {
 
   return [
     {
-      title: "Test Your Setup",
-      description:
-        "Run the same demo tests from your terminal that the browser demo runs. Verifies your agent against the live Google Cloud Functions — service verification, census, and agent-to-agent peer check.",
-      flow: "Set AGENT_PRIVATE_KEY → Run script → Hits live GCF endpoints → Confirms agent works end-to-end",
-      snippets: [
-        { label: "TypeScript", language: "typescript", code: buildTestSetupTS() },
-        { label: "Python", language: "python", code: buildTestSetupPython() },
-        { label: "Bash", language: "bash", code: buildTestSetupBash() },
-      ],
-    },
-    {
       title: "Sign Requests",
       description:
         "Your agent signs every outgoing request with its private key. Services that support Self Agent ID verify your agent automatically.",
@@ -1089,6 +1200,17 @@ res = signed_request("POST", "https://api.example.com/data",
         { label: "Python", language: "python", code: buildSubmitTxPython() },
         { label: "Rust", language: "rust", code: buildSubmitTxRust() },
         { label: "Solidity (Contract)", language: "solidity", code: buildSubmitTxSolidity() },
+      ],
+    },
+    {
+      title: "Test Your Setup",
+      description:
+        "Run the same demo tests from your terminal that the browser demo runs. Hits the live Google Cloud Functions for service verification, agent-to-agent peer check, and on-chain meta-transaction verification.",
+      flow: "Set AGENT_PRIVATE_KEY → Run script → Hits live endpoints → Confirms agent works end-to-end",
+      snippets: [
+        { label: "TypeScript", language: "typescript", code: buildTestSetupTS() },
+        { label: "Python", language: "python", code: buildTestSetupPython() },
+        { label: "Bash", language: "bash", code: buildTestSetupBash() },
       ],
     },
   ];

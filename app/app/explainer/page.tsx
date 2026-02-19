@@ -109,15 +109,21 @@ export default function ExplainerPage() {
       <section className="bg-surface-1 px-6 py-20">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-6">The Problem</h2>
-          <p className="text-lg text-muted leading-relaxed">
-            AI agents are proliferating across DeFi, governance, and social
-            platforms, yet there is no standard way to verify that an agent is
-            backed by a real human. Without proof-of-human, autonomous agents
-            can impersonate users, execute sybil attacks, and erode trust in
-            on-chain interactions. The ecosystem needs a trustless,
-            privacy-preserving primitive that protocols can adopt without
-            building bespoke identity solutions.
-          </p>
+          <div className="text-lg text-muted leading-relaxed space-y-4">
+            <p>
+              AI agents are becoming autonomous participants in our digital lives &mdash;
+              booking travel, managing finances, writing code, and negotiating on our
+              behalf. As they act for us, every service they interact with faces the
+              same question: <strong className="text-foreground">&ldquo;Is this agent backed by a real person,
+              or is it part of a bot farm?&rdquo;</strong>
+            </p>
+            <p>
+              Without a universal standard, every platform builds its own verification
+              &mdash; fragmented, expensive, and unreliable. Proof-of-human gives agents
+              a portable, privacy-preserving credential that any service can check
+              instantly, without knowing who the human behind the agent is.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -193,41 +199,37 @@ export default function ExplainerPage() {
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-4">Security Model</h2>
           <p className="text-center text-muted max-w-2xl mx-auto mb-12">
-            The registry supports two registration modes. Both produce the same
+            The registry supports four registration modes. All produce the same
             on-chain result &mdash; a verified, sybil-resistant agent NFT &mdash;
-            but they differ in who holds the agent&apos;s private key.
+            but they differ in who holds the agent&apos;s private key and how the
+            human manages their agent.
           </p>
 
-          {/* Two modes side-by-side */}
+          {/* Four modes — 2x2 grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-            {/* Simple Mode */}
+            {/* Verified Wallet */}
             <Card>
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
                   <Wallet size={16} className="text-accent" />
                 </span>
-                <h3 className="font-bold text-lg">Simple Mode</h3>
+                <h3 className="font-bold text-lg">Verified Wallet</h3>
                 <Badge variant="success">live</Badge>
               </div>
               <p className="text-sm font-medium mb-2">
                 Wallet = Agent Identity
               </p>
               <p className="text-sm text-muted mb-4">
-                The human&apos;s Self wallet address becomes the agent key. No extra
+                The human&apos;s wallet address becomes the agent key. No extra
                 keypair to manage &mdash; ideal for single-agent setups and quick
                 integrations.
               </p>
-              <div className="bg-surface-2 rounded-lg p-3 mb-4">
-                <p className="text-xs font-mono">
-                  agentKey = bytes32(uint256(uint160(<span className="text-accent-success">walletAddress</span>)))
-                </p>
-              </div>
               <div className="space-y-2 text-sm text-muted">
                 <p className="font-bold text-foreground">How it&apos;s secured:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>Key is derived <em>inside</em> the contract callback &mdash; can&apos;t be spoofed</li>
                   <li>ZK proof binds wallet address to human nullifier</li>
-                  <li>Off-chain: SDK signs requests with wallet key; services recover signer from ECDSA signature</li>
+                  <li>SDK signs requests with wallet key; services recover signer from ECDSA signature</li>
                 </ul>
               </div>
               <div className="mt-4 pt-4 border-t border-border">
@@ -239,13 +241,13 @@ export default function ExplainerPage() {
               </div>
             </Card>
 
-            {/* Advanced Mode */}
+            {/* Agent Identity */}
             <Card>
               <div className="flex items-center gap-2 mb-4">
                 <span className="w-8 h-8 rounded-full bg-accent-2/20 flex items-center justify-center">
                   <Key size={16} className="text-accent-2" />
                 </span>
-                <h3 className="font-bold text-lg">Advanced Mode</h3>
+                <h3 className="font-bold text-lg">Agent Identity</h3>
                 <Badge variant="info">v2</Badge>
               </div>
               <p className="text-sm font-medium mb-2">
@@ -257,23 +259,85 @@ export default function ExplainerPage() {
                 via Self, and the agent proves key ownership via ECDSA &mdash; both in
                 a single QR scan.
               </p>
-              <div className="bg-surface-2 rounded-lg p-3 mb-4">
-                <p className="text-xs font-mono">
-                  agentKey = bytes32(uint256(uint160(<span className="text-accent-2">agentAddress</span>)))
-                </p>
-              </div>
               <div className="space-y-2 text-sm text-muted">
                 <p className="font-bold text-foreground">How it&apos;s secured:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>ECDSA signature in registration proves agent key ownership</li>
                   <li>ZK proof binds human identity to nullifier</li>
-                  <li>Off-chain: agent signs requests with its <em>own</em> key &mdash; human wallet never exposed</li>
+                  <li>Agent signs requests with its <em>own</em> key &mdash; human wallet never exposed</li>
                 </ul>
               </div>
               <div className="mt-4 pt-4 border-t border-border">
                 <p className="text-xs text-muted">
                   <strong className="text-foreground">Best for:</strong> Multiple agents per user, key rotation,
                   delegation, autonomous agents that operate independently.
+                </p>
+              </div>
+            </Card>
+
+            {/* No Wallet */}
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                  <Lock size={16} className="text-accent" />
+                </span>
+                <h3 className="font-bold text-lg">No Wallet</h3>
+                <Badge variant="info">v2</Badge>
+              </div>
+              <p className="text-sm font-medium mb-2">
+                Agent EOA Owns Its NFT
+              </p>
+              <p className="text-sm text-muted mb-4">
+                No crypto wallet required. A fresh agent keypair is generated in the
+                browser, and the agent&apos;s own address owns the NFT. An optional guardian
+                can be set for recovery. The user manages the raw private key.
+              </p>
+              <div className="space-y-2 text-sm text-muted">
+                <p className="font-bold text-foreground">How it&apos;s secured:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Agent signs challenge with its own key during registration</li>
+                  <li>ZK proof binds human identity to nullifier</li>
+                  <li>Deregister anytime by scanning passport again</li>
+                </ul>
+              </div>
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted">
+                  <strong className="text-foreground">Best for:</strong> Non-crypto users who just need an agent
+                  registered quickly with their passport.
+                </p>
+              </div>
+            </Card>
+
+            {/* Smart Wallet */}
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
+                  <Fingerprint size={16} className="text-accent-success" />
+                </span>
+                <h3 className="font-bold text-lg">Smart Wallet</h3>
+                <Badge variant="success">new</Badge>
+              </div>
+              <p className="text-sm font-medium mb-2">
+                Passkey + Kernel Smart Account
+              </p>
+              <p className="text-sm text-muted mb-4">
+                A passkey (Face ID / fingerprint) creates a Kernel smart account as
+                guardian. No MetaMask, no seed phrase. The agent still has its own ECDSA
+                key for signing requests; the smart wallet handles on-chain management
+                gaslessly via Pimlico.
+              </p>
+              <div className="space-y-2 text-sm text-muted">
+                <p className="font-bold text-foreground">How it&apos;s secured:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Passkey (WebAuthn) backed by device biometrics &mdash; phishing-resistant</li>
+                  <li>Smart wallet = guardian, can revoke agent gaslessly</li>
+                  <li>Agent signs requests with its own ECDSA key</li>
+                </ul>
+              </div>
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted">
+                  <strong className="text-foreground">Best for:</strong> Users who want the simplest experience
+                  with no seed phrases, no browser extensions, and gasless management.
                 </p>
               </div>
             </Card>

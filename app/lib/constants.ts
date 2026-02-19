@@ -33,3 +33,6 @@ export const REGISTRY_ABI = [
   "function updateAgentMetadata(uint256 agentId, string metadata)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ] as const;
+
+// Account Abstraction
+export const ENTRYPOINT_ADDRESS = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";

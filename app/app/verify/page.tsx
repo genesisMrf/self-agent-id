@@ -13,13 +13,18 @@ import {
   ChevronLeft,
   Shield,
   FileText,
+  Fingerprint,
+  Loader2,
 } from "lucide-react";
 import CodeBlock from "@/components/CodeBlock";
 import { getServiceSnippets, getAgentSnippets } from "@/lib/snippets";
 import { connectWallet } from "@/lib/wallet";
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL } from "@/lib/constants";
 import { Card } from "@/components/Card";
+import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { sendUserOperation, encodeGuardianRevoke, isPasskeySupported, isGaslessSupported } from "@/lib/aa";
+import { getPasskey } from "@/lib/passkey-storage";
 
 const SelfQRcodeWrapper = dynamic(
   () => import("@selfxyz/qrcode").then((mod) => mod.SelfQRcodeWrapper),
@@ -36,6 +41,7 @@ interface AgentInfo {
   guardian: string;
   metadata: string;
   mode: "simple" | "advanced" | "walletfree";
+  isSmartWallet: boolean;
 }
 
 function VerifyContent() {
@@ -49,6 +55,7 @@ function VerifyContent() {
   const [activeAgentSnippet, setActiveAgentSnippet] = useState(0);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [showDeregister, setShowDeregister] = useState(false);
+  const [passkeyRevoking, setPasskeyRevoking] = useState(false);
   const [selfApp, setSelfApp] = useState<ReturnType<
     InstanceType<typeof import("@selfxyz/qrcode").SelfAppBuilder>["build"]
   > | null>(null);
@@ -89,6 +96,7 @@ function VerifyContent() {
           guardian: ethers.ZeroAddress,
           metadata: "",
           mode: "simple",
+          isSmartWallet: false,
         });
       } else {
         let owner = ethers.ZeroAddress;
@@ -109,12 +117,17 @@ function VerifyContent() {
         let mode: "simple" | "advanced" | "walletfree" = "advanced";
         if (owner !== ethers.ZeroAddress) {
           if (agentAddress.toLowerCase() === owner.toLowerCase()) {
-            // Owner IS the agent address — could be simple or wallet-free
-            // Wallet-free agents have a guardian set (or were registered via W action)
-            // Simple mode: agentPubKey = zeroPadValue(humanWallet), so agent addr === human wallet
-            // For now, if guardian is set it's wallet-free, otherwise simple
             mode = guardian !== ethers.ZeroAddress ? "walletfree" : "simple";
           }
+        }
+
+        // Detect smart wallet: guardian is a contract (has code)
+        let isSmartWallet = false;
+        if (guardian !== ethers.ZeroAddress) {
+          try {
+            const code = await provider.getCode(guardian);
+            isSmartWallet = code !== "0x" && code.length > 2;
+          } catch {}
         }
 
         setAgentInfo({
@@ -125,6 +138,7 @@ function VerifyContent() {
           guardian,
           metadata,
           mode,
+          isSmartWallet,
         });
       }
     } catch (err) {
@@ -257,17 +271,25 @@ function VerifyContent() {
                   <span className="text-muted">Agent ID</span>
                   <span className="font-mono">{agentInfo.agentId.toString()}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-muted">Mode</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    agentInfo.mode === "simple" ? "bg-surface-2 text-muted" :
-                    agentInfo.mode === "advanced" ? "bg-accent/10 text-accent" :
-                    "bg-accent-2/10 text-accent-2"
-                  }`}>
-                    {agentInfo.mode === "simple" ? "Verified Wallet" :
-                     agentInfo.mode === "advanced" ? "Agent Identity" :
-                     "Wallet-Free"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      agentInfo.mode === "simple" ? "bg-surface-2 text-muted" :
+                      agentInfo.mode === "advanced" ? "bg-accent/10 text-accent" :
+                      "bg-accent-2/10 text-accent-2"
+                    }`}>
+                      {agentInfo.mode === "simple" ? "Verified Wallet" :
+                       agentInfo.mode === "advanced" ? "Agent Identity" :
+                       "Wallet-Free"}
+                    </span>
+                    {agentInfo.isSmartWallet && (
+                      <Badge variant="success">
+                        <Fingerprint size={10} className="mr-1" />
+                        Smart Wallet
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Owner</span>
@@ -302,6 +324,56 @@ function VerifyContent() {
               </div>
             )}
           </Card>
+
+          {agentInfo.isVerified && agentInfo.isSmartWallet && isPasskeySupported() && (() => {
+            const storedPasskey = getPasskey();
+            const passkeyMatchesGuardian = storedPasskey &&
+              storedPasskey.walletAddress.toLowerCase() === agentInfo.guardian.toLowerCase();
+            if (!passkeyMatchesGuardian) return null;
+
+            if (!isGaslessSupported()) {
+              return (
+                <div className="w-full mt-2">
+                  <p className="text-xs text-subtle">
+                    Gasless revocation via passkey is available on mainnet. On testnet, use the deregister button below (passport scan).
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="w-full mt-2">
+                <button
+                  onClick={async () => {
+                    setPasskeyRevoking(true);
+                    try {
+                      const callData = encodeGuardianRevoke(agentInfo.agentId);
+                      await sendUserOperation(REGISTRY_ADDRESS as `0x${string}`, callData);
+                      lookupAgent(agentKey);
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : "Revocation failed");
+                    } finally {
+                      setPasskeyRevoking(false);
+                    }
+                  }}
+                  disabled={passkeyRevoking}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-accent-error/10 text-accent-error border border-accent-error/20 hover:bg-accent-error/20 transition-colors disabled:opacity-50"
+                >
+                  {passkeyRevoking ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      Revoking...
+                    </>
+                  ) : (
+                    <>
+                      <Fingerprint size={14} />
+                      Revoke with Passkey (gasless)
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })()}
 
           {agentInfo.isVerified && (
             <div className="w-full mt-2">

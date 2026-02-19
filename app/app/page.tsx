@@ -9,8 +9,6 @@ import {
   CheckCircle2,
   ArrowRight,
   Cpu,
-  Wallet,
-  Smartphone,
 } from "lucide-react";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
@@ -116,51 +114,26 @@ export default function Home() {
               Register your AI agent so services trust it
             </p>
 
-            {/* Three modes */}
-            <div className="space-y-3 mb-6">
-              <div className="flex gap-3 p-3 rounded-lg bg-surface-2 border border-border">
-                <Wallet size={18} className="text-accent flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">Verified Wallet</p>
-                  <p className="text-xs text-muted">Your wallet address is the agent identity. Simplest option for crypto-native users.</p>
-                </div>
-              </div>
-              <div className="flex gap-3 p-3 rounded-lg bg-surface-2 border border-border">
-                <Key size={18} className="text-accent flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">Agent Identity</p>
-                  <p className="text-xs text-muted">Agent gets its own keypair, separate from your wallet. Best for dedicated agent infrastructure.</p>
-                </div>
-              </div>
-              <div className="flex gap-3 p-3 rounded-lg bg-surface-2 border border-border">
-                <Smartphone size={18} className="text-accent-2 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium text-sm">No Wallet Needed</p>
-                  <p className="text-xs text-muted">No crypto wallet required. Just scan your passport with the Self app &mdash; an agent key is generated for you automatically.</p>
-                </div>
-              </div>
-            </div>
-
             <ol className="space-y-4">
               {[
                 {
                   title: "Choose your mode",
-                  desc: "Pick from Verified Wallet, Agent Identity, or No Wallet. Non-crypto users can skip wallet setup entirely.",
+                  desc: "Pick from four options: wallet-based, agent keypair, wallet-free, or passkey smart wallet. Non-crypto users can skip wallet setup entirely.",
                 },
                 {
-                  title: "Connect wallet (if applicable)",
-                  desc: "Wallet modes require connecting MetaMask or similar. No Wallet mode skips this step.",
+                  title: "Set up your identity",
+                  desc: "Connect a wallet, create a passkey, or go straight to scanning — depending on the mode you chose.",
                 },
                 {
                   title: "Scan with Self app",
                   desc: "Scan the QR code with the Self app. A ZK proof of your passport is generated — no personal data is shared.",
                 },
                 {
-                  title: "Agent is registered",
-                  desc: "An NFT is minted on-chain binding your agent key to a verified human. Save your credentials securely.",
+                  title: "Agent is registered on-chain",
+                  desc: "An NFT is minted binding your agent key to a verified human. Save your credentials securely.",
                 },
                 {
-                  title: "Agent signs requests",
+                  title: "Agent signs requests via SDK",
                   desc: "Your agent uses the SDK to sign every outgoing request. Services verify the signature against the on-chain registry.",
                 },
               ].map((step, i) => (

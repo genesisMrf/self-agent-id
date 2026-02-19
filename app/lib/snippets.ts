@@ -128,253 +128,6 @@ ${body}
 });`;
 }
 
-function buildServicePython(f: Set<string>, registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
-  const creds = needsCreds(f);
-  const sybil = f.has("sybil");
-  const regAge = f.has("regAge");
-
-  let abiEntries = `    {"name": "isVerifiedAgent", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "bytes32"}], "outputs": [{"type": "bool"}]},`;
-
-  if (sybil || creds || regAge) {
-    abiEntries += `
-    {"name": "getAgentId", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "bytes32"}], "outputs": [{"type": "uint256"}]},`;
-  }
-  if (sybil) {
-    abiEntries += `
-    {"name": "getHumanNullifier", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "uint256"}], "outputs": [{"type": "uint256"}]},
-    {"name": "getAgentCountForHuman", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "uint256"}], "outputs": [{"type": "uint256"}]},`;
-  }
-  if (creds) {
-    abiEntries += `
-    {"name": "getAgentCredentials", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "uint256"}],
-     "outputs": [{"type": "tuple", "components": [
-       {"name": "issuingState", "type": "string"},
-       {"name": "name", "type": "string[]"},
-       {"name": "idNumber", "type": "string"},
-       {"name": "nationality", "type": "string"},
-       {"name": "dateOfBirth", "type": "string"},
-       {"name": "gender", "type": "string"},
-       {"name": "expiryDate", "type": "string"},
-       {"name": "olderThan", "type": "uint256"},
-       {"name": "ofac", "type": "bool[]"}
-     ]}]},`;
-  }
-  if (regAge) {
-    abiEntries += `
-    {"name": "agentRegisteredAt", "type": "function", "stateMutability": "view",
-     "inputs": [{"type": "uint256"}], "outputs": [{"type": "uint256"}]},`;
-  }
-
-  const rateLimit = f.has("rateLimit");
-
-  let body = `    if not verified:
-        return False`;
-
-  if (rateLimit) {
-    body += `
-
-    # Rate limit: 10 requests per agent per minute
-    now = time.time()
-    key = address.lower()
-    timestamps = rate_limiter.get(key, [])
-    timestamps = [t for t in timestamps if now - t < 60]
-    if len(timestamps) >= 10:
-        return False
-    timestamps.append(now)
-    rate_limiter[key] = timestamps`;
-  }
-
-  if (sybil || creds || regAge) {
-    body += `
-
-    agent_id = registry.functions.getAgentId(agent_key).call()`;
-  }
-  if (sybil) {
-    body += `
-    nullifier = registry.functions.getHumanNullifier(agent_id).call()
-    count = registry.functions.getAgentCountForHuman(nullifier).call()
-    if count > 5:
-        return False`;
-  }
-  if (creds) {
-    body += `
-
-    creds = registry.functions.getAgentCredentials(agent_id).call()`;
-  }
-  if (f.has("age18")) {
-    body += `
-    if creds[7] < 18:  # olderThan
-        return False`;
-  }
-  if (f.has("age21")) {
-    body += `
-    if creds[7] < 21:  # olderThan
-        return False`;
-  }
-  if (f.has("ofac")) {
-    body += `
-    if not creds[8][0]:  # ofac
-        return False`;
-  }
-  if (f.has("nationality")) {
-    body += `
-    print("Nationality:", creds[3])`;
-  }
-  if (f.has("issuingState")) {
-    body += `
-    print("Issuing state:", creds[0])`;
-  }
-  if (f.has("credentials")) {
-    body += `
-    print("All credentials:", creds)`;
-  }
-  if (regAge) {
-    body += `
-
-    reg_block = registry.functions.agentRegisteredAt(agent_id).call()
-    current_block = w3.eth.block_number
-    if current_block - reg_block < 50400:  # ~7 days on Celo
-        return False`;
-  }
-
-  body += `
-
-    return True`;
-
-  let rateLimiterDecl = "";
-  if (rateLimit) {
-    rateLimiterDecl = `\nrate_limiter: dict[str, list[float]] = {}\n`;
-  }
-
-  return `import time
-from web3 import Web3
-from eth_account.messages import encode_defunct
-
-w3 = Web3(Web3.HTTPProvider(
-    "${rpcUrl}"
-))
-REGISTRY = "${registryAddress}"
-REGISTRY_ABI = [
-${abiEntries}
-]
-registry = w3.eth.contract(address=REGISTRY, abi=REGISTRY_ABI)${rateLimiterDecl}
-
-def verify_agent(address: str, signature: str, ts: str,
-                 method: str, url: str, body: str = "") -> bool:
-    if time.time() * 1000 - int(ts) > 5 * 60 * 1000:
-        return False
-    body_hash = Web3.keccak(text=body).hex() if body else Web3.keccak(text="").hex()
-    msg_hash = Web3.keccak(text=ts + method.upper() + url + body_hash)
-    message = encode_defunct(primitive=msg_hash)
-    recovered = w3.eth.account.recover_message(message, signature=signature)
-    if recovered.lower() != address.lower():
-        return False
-    agent_key = w3.to_bytes(hexstr=address).rjust(32, b"\\x00")
-    verified = registry.functions.isVerifiedAgent(agent_key).call()
-
-${body}`;
-}
-
-function buildServiceRust(f: Set<string>, registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
-  const creds = needsCreds(f);
-  const sybil = f.has("sybil");
-  const regAge = f.has("regAge");
-
-  let iface = `        function isVerifiedAgent(bytes32) external view returns (bool);`;
-  if (sybil || creds || regAge) {
-    iface += `\n        function getAgentId(bytes32) external view returns (uint256);`;
-  }
-  if (sybil) {
-    iface += `\n        function getHumanNullifier(uint256) external view returns (uint256);`;
-    iface += `\n        function getAgentCountForHuman(uint256) external view returns (uint256);`;
-  }
-  if (regAge) {
-    iface += `\n        function agentRegisteredAt(uint256) external view returns (uint256);`;
-  }
-
-  const rateLimit = f.has("rateLimit");
-
-  let checks = `    if !registry.isVerifiedAgent(key).call().await.unwrap()._0 {
-        return false;
-    }`;
-
-  if (rateLimit) {
-    checks += `
-
-    // Rate limit: 10 requests per agent per minute
-    // (use a concurrent HashMap or Redis in production)`;
-  }
-
-  if (sybil || creds || regAge) {
-    checks += `
-    let id = registry.getAgentId(key).call().await.unwrap()._0;`;
-  }
-  if (sybil) {
-    checks += `
-    let nullifier = registry.getHumanNullifier(id).call().await.unwrap()._0;
-    let count = registry.getAgentCountForHuman(nullifier).call().await.unwrap()._0;
-    if count > alloy::primitives::U256::from(5) {
-        return false;
-    }`;
-  }
-  if (regAge) {
-    checks += `
-    let reg_block = registry.agentRegisteredAt(id).call().await.unwrap()._0;
-    // Check agent has been registered for at least ~7 days
-    // (compare with current block in production)`;
-  }
-  if (creds) {
-    checks += `
-    // Fetch credentials via getAgentCredentials(id) for further checks`;
-  }
-
-  return `use alloy::primitives::{Address, FixedBytes};
-use alloy::providers::ProviderBuilder;
-use alloy::sol;
-
-sol! {
-    #[sol(rpc)]
-    interface ISelfAgentRegistry {
-${iface}
-    }
-}
-
-async fn verify_agent(
-    agent_address: Address,
-    signature: &[u8],
-    timestamp: &str,
-    method: &str,
-    url: &str,
-) -> bool {
-    // 1. Check timestamp freshness
-    let ts: u64 = timestamp.parse().unwrap_or(0);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-    if now - ts > 5 * 60 * 1000 { return false; }
-
-    // 2. Recover signer from EIP-191 signature
-    let message = format!("{}{}{}", timestamp, method.to_uppercase(), url);
-    // ... recover signer and verify it matches agent_address ...
-
-    // 3. Check on-chain
-    let provider = ProviderBuilder::new()
-        .on_http("${rpcUrl}".parse().unwrap());
-    let registry = ISelfAgentRegistry::new(
-        "${registryAddress}".parse().unwrap(),
-        &provider,
-    );
-    let key = FixedBytes::left_padding_from(&agent_address.0 .0);
-${checks}
-
-    true
-}`;
-}
-
 function buildServicePythonSDK(f: Set<string>): string {
   const creds = needsCreds(f);
   const sybil = f.has("sybil");
@@ -908,198 +661,6 @@ print(f"Address: {result.agent_address}")
 print("\\nAll 3 tests passed!")`;
 }
 
-function buildTestSetupPython(): string {
-  return `import time, json, os, requests, struct
-from web3 import Web3
-from eth_account import Account
-from eth_account.messages import encode_defunct, encode_structured_data
-
-# Celo Sepolia testnet — for mainnet use https://forno.celo.org + mainnet addresses
-REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"
-RPC = "https://forno.celo-sepolia.celo-testnet.org"
-DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
-DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
-DEMO_APP = "https://agent-id.self.xyz"
-VERIFIER = "0x26e05bF632fb5bACB665ab014240EAC1413dAE35"
-
-agent = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
-w3 = Web3(Web3.HTTPProvider(RPC))
-
-def sign_request(method: str, url: str, body: str = ""):
-    ts = str(int(time.time() * 1000))
-    body_hash = "0x" + Web3.keccak(text=body).hex() if body else "0x" + Web3.keccak(text="").hex()
-    msg = Web3.keccak(text=ts + method.upper() + url + body_hash)
-    sig = agent.sign_message(encode_defunct(primitive=msg)).signature.hex()
-    return {
-        "x-self-agent-address": agent.address,
-        "x-self-agent-signature": "0x" + sig,
-        "x-self-agent-timestamp": ts,
-    }
-
-print(f"Agent: {agent.address}")
-
-# Test 1: Agent → Service
-print("\\n--- Test 1: Agent → Service ---")
-body = json.dumps({"action": "test"})
-headers = {**sign_request("POST", DEMO_SERVICE + "/verify", body),
-           "Content-Type": "application/json"}
-r = requests.post(DEMO_SERVICE + "/verify", headers=headers, data=body)
-data = r.json()
-print(f"Verified: {data.get('valid')} Agent ID: {data.get('agentId')}")
-
-body2 = json.dumps({"action": "contribute"})
-headers2 = {**sign_request("POST", DEMO_SERVICE + "/census", body2),
-            "Content-Type": "application/json"}
-r2 = requests.post(DEMO_SERVICE + "/census", headers=headers2, data=body2)
-print(f"Census: {r2.json().get('totalAgents')} agents")
-
-headers3 = sign_request("GET", DEMO_SERVICE + "/census")
-r3 = requests.get(DEMO_SERVICE + "/census", headers=headers3)
-stats = r3.json()
-print(f"Stats: {stats.get('totalAgents')} agents, "
-      f"{stats.get('verifiedOver18')} over 18")
-
-# Test 2: Agent → Agent
-print("\\n--- Test 2: Agent → Agent ---")
-body4 = json.dumps({"action": "peer-verify"})
-headers4 = {**sign_request("POST", DEMO_AGENT, body4),
-            "Content-Type": "application/json"}
-r4 = requests.post(DEMO_AGENT, headers=headers4, data=body4)
-peer = r4.json()
-print(f"Verified: {peer.get('verified')} Same human: {peer.get('sameHuman')}")
-print(f"Response signed: {'x-self-agent-signature' in r4.headers}")
-
-# Test 3: Agent → Chain (EIP-712 meta-transaction)
-print("\\n--- Test 3: Agent → Chain ---")
-verifier_abi = [{"name": "nonces", "type": "function",
-    "stateMutability": "view",
-    "inputs": [{"type": "bytes32"}], "outputs": [{"type": "uint256"}]}]
-verifier = w3.eth.contract(address=VERIFIER, abi=verifier_abi)
-agent_key = b"\\x00" * 12 + bytes.fromhex(agent.address[2:])
-nonce = verifier.functions.nonces(agent_key).call()
-deadline = int(time.time()) + 300
-
-typed_data = {
-    "types": {
-        "EIP712Domain": [
-            {"name": "name", "type": "string"},
-            {"name": "version", "type": "string"},
-            {"name": "chainId", "type": "uint256"},
-            {"name": "verifyingContract", "type": "address"},
-        ],
-        "MetaVerify": [
-            {"name": "agentKey", "type": "bytes32"},
-            {"name": "nonce", "type": "uint256"},
-            {"name": "deadline", "type": "uint256"},
-        ],
-    },
-    "primaryType": "MetaVerify",
-    "domain": {
-        "name": "AgentDemoVerifier", "version": "1",
-        "chainId": 11142220,
-        "verifyingContract": VERIFIER,
-    },
-    "message": {
-        "agentKey": agent_key,
-        "nonce": nonce,
-        "deadline": deadline,
-    },
-}
-sig712 = agent.sign_message(
-    encode_structured_data(typed_data)
-).signature.hex()
-
-body5 = json.dumps({
-    "agentKey": "0x" + agent_key.hex(),
-    "nonce": str(nonce), "deadline": deadline,
-    "eip712Signature": "0x" + sig712,
-})
-headers5 = {**sign_request("POST", DEMO_APP + "/api/demo/chain-verify", body5),
-            "Content-Type": "application/json"}
-r5 = requests.post(DEMO_APP + "/api/demo/chain-verify",
-                    headers=headers5, data=body5)
-chain = r5.json()
-print(f"Tx: {chain.get('txHash')}")
-print(f"Block: {chain.get('blockNumber')}")
-print(f"Explorer: {chain.get('explorerUrl')}")
-
-print("\\nAll 3 tests passed!")`;
-}
-
-function buildTestSetupBash(): string {
-  return `#!/bin/bash
-# Run Self Agent ID demo tests
-# Requires: AGENT_PRIVATE_KEY env var, node + npm
-# Install SDK: npm install @selfxyz/agent-sdk ethers
-
-DEMO_SERVICE="https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
-DEMO_AGENT="https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
-DEMO_APP="https://agent-id.self.xyz"
-
-# Quick test: health endpoints (no auth needed)
-echo "--- Health Checks ---"
-curl -s "$DEMO_SERVICE/health" | jq .
-curl -s "$DEMO_AGENT/health" | jq .
-
-# Full test suite (all 3 tests including on-chain)
-echo ""
-echo "--- Full Test Suite (3 tests) ---"
-npx tsx -e "
-const { SelfAgent } = require('@selfxyz/agent-sdk');
-const { ethers } = require('ethers');
-
-// Celo Sepolia testnet — for mainnet use forno.celo.org + mainnet addresses
-const REGISTRY = '0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b';
-const VERIFIER = '0x26e05bF632fb5bACB665ab014240EAC1413dAE35';
-const RPC = 'https://forno.celo-sepolia.celo-testnet.org';
-
-const agent = new SelfAgent({
-  privateKey: process.env.AGENT_PRIVATE_KEY,
-  network: 'testnet', // or omit for mainnet
-});
-
-(async () => {
-  console.log('Agent:', agent.address);
-
-  // Test 1: Agent → Service
-  const r = await agent.fetch('$DEMO_SERVICE/verify', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ action: 'test' }),
-  });
-  console.log('Test 1 (Service):', await r.json());
-
-  // Test 2: Agent → Agent
-  const p = await agent.fetch('$DEMO_AGENT', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ action: 'peer-verify' }),
-  });
-  console.log('Test 2 (Agent):', await p.json());
-
-  // Test 3: Agent → Chain
-  const provider = new ethers.JsonRpcProvider(RPC);
-  const v = new ethers.Contract(VERIFIER,
-    ['function nonces(bytes32) view returns (uint256)'], provider);
-  const key = ethers.zeroPadValue(agent.address, 32);
-  const nonce = await v.nonces(key);
-  const deadline = Math.floor(Date.now()/1000) + 300;
-  const wallet = new ethers.Wallet(process.env.AGENT_PRIVATE_KEY);
-  const sig = await wallet.signTypedData(
-    {name:'AgentDemoVerifier',version:'1',
-     chainId:11142220n,verifyingContract:VERIFIER},
-    {MetaVerify:[{name:'agentKey',type:'bytes32'},
-     {name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]},
-    {agentKey:key,nonce,deadline});
-  const c = await agent.fetch('$DEMO_APP/api/demo/chain-verify', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({agentKey:key,nonce:nonce.toString(),
-      deadline,eip712Signature:sig}),
-  });
-  console.log('Test 3 (Chain):', await c.json());
-  console.log('All 3 tests passed!');
-})();
-"`;
-}
-
 function buildSubmitTxTS(rpcUrl: string): string {
   return `import { ethers } from "ethers";
 
@@ -1239,10 +800,8 @@ export function getServiceSnippets(
         "Verify that an AI agent calling your API is human-backed. The SDK handles signature verification, on-chain checks, and caching.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk) \u2192 Create verifier \u2192 Add middleware \u2192 Done",
       snippets: [
-        { label: "TypeScript (SDK)", language: "typescript", code: buildServiceTS(f) },
-        { label: "Python (SDK)", language: "python", code: buildServicePythonSDK(f) },
-        { label: "Python (raw)", language: "python", code: buildServicePython(f, registryAddress, rpcUrl) },
-        { label: "Rust", language: "rust", code: buildServiceRust(f, registryAddress, rpcUrl) },
+        { label: "TypeScript", language: "typescript", code: buildServiceTS(f) },
+        { label: "Python", language: "python", code: buildServicePythonSDK(f) },
       ],
     },
     {
@@ -1251,8 +810,8 @@ export function getServiceSnippets(
         "Verify a peer agent is human-backed before collaborating. Prevents sybil attacks in multi-agent systems.",
       flow: "Receive signed message \u2192 Verify via SDK \u2192 Check identity \u2192 Collaborate",
       snippets: [
-        { label: "TypeScript (SDK)", language: "typescript", code: buildAgentAgentTS(f, registryAddress, rpcUrl) },
-        { label: "Python (SDK)", language: "python", code: buildAgentAgentPythonSDK(f) },
+        { label: "TypeScript", language: "typescript", code: buildAgentAgentTS(f, registryAddress, rpcUrl) },
+        { label: "Python", language: "python", code: buildAgentAgentPythonSDK(f) },
         { label: "Solidity", language: "solidity", code: buildAgentAgentSolidity(f, registryAddress) },
       ],
     },
@@ -1282,9 +841,9 @@ export function getAgentSnippets(
         "Your agent signs every outgoing request with its private key. Services that support Self Agent ID verify your agent automatically.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk) \u2192 Create agent \u2192 Use agent.fetch() \u2192 Service verifies automatically",
       snippets: [
-        { label: "TypeScript (SDK)", language: "typescript", code: buildSignRequestsTS(f) },
+        { label: "TypeScript", language: "typescript", code: buildSignRequestsTS(f) },
         {
-          label: "Python (SDK)",
+          label: "Python",
           language: "python",
           code: `from self_agent_sdk import SelfAgent
 import os
@@ -1301,68 +860,6 @@ print("Registered:", agent.is_registered())
 # Get full agent info (ID, nullifier, sybil count)
 info = agent.get_info()
 print(f"Agent ID: {info.agent_id}, Verified: {info.is_verified}")`,
-        },
-        {
-          label: "Rust",
-          language: "rust",
-          code: `use alloy::signers::local::PrivateKeySigner;
-use alloy::primitives::keccak256;
-use reqwest::header::HeaderMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn sign_request(
-    signer: &PrivateKeySigner,
-    method: &str, url: &str, body: &str,
-) -> HeaderMap {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH).unwrap()
-        .as_millis().to_string();
-    let body_hash = keccak256(body.as_bytes());
-    let message = keccak256(
-        format!("{}{}{}{}", ts, method.to_uppercase(), url, body_hash)
-    );
-    let sig = signer.sign_message_sync(&message.0).unwrap();
-
-    let mut headers = HeaderMap::new();
-    headers.insert("x-self-agent-address",
-        format!("{}", signer.address()).parse().unwrap());
-    headers.insert("x-self-agent-signature",
-        format!("0x{}", hex::encode(sig.as_bytes())).parse().unwrap());
-    headers.insert("x-self-agent-timestamp",
-        ts.parse().unwrap());
-    headers
-}`,
-        },
-        {
-          label: "Python (raw)",
-          language: "python",
-          code: `import time, requests, os, json
-from eth_account import Account
-from eth_account.messages import encode_defunct
-from web3 import Web3
-
-agent = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
-
-def signed_request(method: str, url: str, **kwargs):
-    ts = str(int(time.time() * 1000))
-    body = json.dumps(kwargs.get("json", "")) if "json" in kwargs else ""
-    body_hash = "0x" + Web3.keccak(text=body).hex()
-    msg_hash = Web3.keccak(text=ts + method.upper() + url + body_hash)
-    sig = agent.sign_message(
-        encode_defunct(primitive=msg_hash)
-    ).signature.hex()
-
-    headers = kwargs.pop("headers", {})
-    headers.update({
-        "x-self-agent-address": agent.address,
-        "x-self-agent-signature": "0x" + sig,
-        "x-self-agent-timestamp": ts,
-    })
-    return requests.request(method, url, headers=headers, **kwargs)
-
-# Usage
-res = signed_request("POST", "https://api.example.com/data",
-                      json={"query": "test"})`,
         },
       ],
     },
@@ -1385,9 +882,7 @@ res = signed_request("POST", "https://api.example.com/data",
       flow: "Set AGENT_PRIVATE_KEY → Run script → Hits live endpoints → Confirms agent works end-to-end",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildTestSetupTS() },
-        { label: "Python (SDK)", language: "python", code: buildTestSetupPythonSDK() },
-        { label: "Python (raw)", language: "python", code: buildTestSetupPython() },
-        { label: "Bash", language: "bash", code: buildTestSetupBash() },
+        { label: "Python", language: "python", code: buildTestSetupPythonSDK() },
       ],
     },
   ];

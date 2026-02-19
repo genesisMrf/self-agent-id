@@ -238,6 +238,14 @@ export default function ExplainerPage() {
               These code snippets are for <strong className="text-foreground">service developers</strong> who want to verify
               agents in their applications. Pre-filled with the deployed contract address.
             </p>
+            <div className="flex gap-3 flex-wrap">
+              <code className="bg-surface-2 font-mono text-accent-2 px-3 py-1.5 rounded text-xs">
+                npm install @selfxyz/agent-sdk
+              </code>
+              <code className="bg-surface-2 font-mono text-accent-2 px-3 py-1.5 rounded text-xs">
+                pip install selfxyz-agent-sdk
+              </code>
+            </div>
 
             <div className="flex gap-2 flex-wrap">
               {snippets.map((uc, i) => (

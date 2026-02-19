@@ -182,7 +182,7 @@ export default function Home() {
                     <>
                       One line for Express:{" "}
                       <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded text-xs">
-                        app.use(verifier.expressMiddleware())
+                        app.use(verifier.auth())
                       </code>
                     </>
                   ),

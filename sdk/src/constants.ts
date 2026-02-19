@@ -6,6 +6,7 @@ export const REGISTRY_ABI = [
   "function getAgentCountForHuman(uint256 nullifier) view returns (uint256)",
   "function sameHuman(uint256 agentIdA, uint256 agentIdB) view returns (bool)",
   "function getProofProvider(uint256 agentId) view returns (address)",
+  "function selfProofProvider() view returns (address)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   // V5: ZK-attested credentials
   "function getAgentCredentials(uint256 agentId) view returns ((string issuingState, string[] name, string idNumber, string nationality, string dateOfBirth, string gender, string expiryDate, uint256 olderThan, bool[3] ofac))",

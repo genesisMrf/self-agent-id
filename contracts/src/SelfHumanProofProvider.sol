@@ -45,7 +45,7 @@ contract SelfHumanProofProvider is ISelfHumanProofProvider {
 
     /// @inheritdoc IHumanProofProvider
     function providerName() external pure override returns (string memory) {
-        return "Self Protocol";
+        return "self";
     }
 
     /// @inheritdoc IHumanProofProvider

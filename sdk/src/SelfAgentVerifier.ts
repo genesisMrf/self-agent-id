@@ -21,6 +21,17 @@ export interface VerifierConfig {
   maxAgentsPerHuman?: number;
   /** Include ZK-attested credentials in verification result (default: false) */
   includeCredentials?: boolean;
+  /**
+   * Require that the agent's proof-of-human was provided by Self Protocol.
+   *
+   * When true (default), the verifier checks that `getProofProvider(agentId)`
+   * matches the registry's `selfProofProvider()` address. This prevents agents
+   * verified by third-party providers from being accepted.
+   *
+   * Set to false only if you intentionally want to accept agents verified by
+   * any approved provider on the registry.
+   */
+  requireSelfProvider?: boolean;
 }
 
 /** ZK-attested credential claims stored on-chain for an agent */
@@ -54,6 +65,7 @@ interface CacheEntry {
   isVerified: boolean;
   agentId: bigint;
   agentCount: bigint;
+  providerAddress: string;
   expiresAt: number;
 }
 
@@ -64,7 +76,8 @@ interface CacheEntry {
  * 1. Recover signer address from ECDSA signature (cryptographic proof of key ownership)
  * 2. Derive agent key: zeroPadValue(recoveredAddress, 32)
  * 3. Check on-chain: isVerifiedAgent(agentKey) (proof that a human registered this address)
- * 4. Check timestamp freshness (replay protection)
+ * 4. Check proof provider: getProofProvider(agentId) matches selfProofProvider()
+ * 5. Check timestamp freshness (replay protection)
  *
  * The signer address is RECOVERED from the signature, never trusted from headers.
  * This closes the off-chain verification gap — you can't claim to be an agent
@@ -96,7 +109,9 @@ export class SelfAgentVerifier {
   private cacheTtlMs: number;
   private maxAgentsPerHuman: number;
   private includeCredentials: boolean;
+  private requireSelfProvider: boolean;
   private cache = new Map<string, CacheEntry>();
+  private selfProviderCache: { address: string; expiresAt: number } | null = null;
 
   constructor(config: VerifierConfig = {}) {
     const provider = new ethers.JsonRpcProvider(config.rpcUrl ?? DEFAULT_RPC_URL);
@@ -109,6 +124,7 @@ export class SelfAgentVerifier {
     this.cacheTtlMs = config.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.maxAgentsPerHuman = config.maxAgentsPerHuman ?? 1;
     this.includeCredentials = config.includeCredentials ?? false;
+    this.requireSelfProvider = config.requireSelfProvider ?? true;
   }
 
   /**
@@ -160,7 +176,8 @@ export class SelfAgentVerifier {
     const agentKey = ethers.zeroPadValue(signerAddress, 32);
 
     // 5. Check on-chain status (with cache)
-    const { isVerified, agentId, agentCount } = await this.checkOnChain(agentKey);
+    const { isVerified, agentId, agentCount, providerAddress } =
+      await this.checkOnChain(agentKey);
 
     if (!isVerified) {
       return {
@@ -173,7 +190,26 @@ export class SelfAgentVerifier {
       };
     }
 
-    // 6. Sybil resistance: reject if human has too many agents
+    // 6. Provider check: ensure agent was verified by Self Protocol
+    if (this.requireSelfProvider && agentId > 0n) {
+      const selfProvider = await this.getSelfProviderAddress();
+      if (
+        selfProvider &&
+        providerAddress &&
+        providerAddress.toLowerCase() !== selfProvider.toLowerCase()
+      ) {
+        return {
+          valid: false,
+          agentAddress: signerAddress,
+          agentKey,
+          agentId,
+          agentCount,
+          error: "Agent was not verified by Self — proof provider mismatch",
+        };
+      }
+    }
+
+    // 7. Sybil resistance: reject if human has too many agents
     if (this.maxAgentsPerHuman > 0 && agentCount > BigInt(this.maxAgentsPerHuman)) {
       return {
         valid: false,
@@ -185,7 +221,7 @@ export class SelfAgentVerifier {
       };
     }
 
-    // 7. Fetch credentials if requested
+    // 8. Fetch credentials if requested
     let credentials: AgentCredentials | undefined;
     if (this.includeCredentials && agentId > 0n) {
       credentials = await this.fetchCredentials(agentId);
@@ -199,10 +235,15 @@ export class SelfAgentVerifier {
    */
   private async checkOnChain(
     agentKey: string
-  ): Promise<{ isVerified: boolean; agentId: bigint; agentCount: bigint }> {
+  ): Promise<{ isVerified: boolean; agentId: bigint; agentCount: bigint; providerAddress: string }> {
     const cached = this.cache.get(agentKey);
     if (cached && cached.expiresAt > Date.now()) {
-      return { isVerified: cached.isVerified, agentId: cached.agentId, agentCount: cached.agentCount };
+      return {
+        isVerified: cached.isVerified,
+        agentId: cached.agentId,
+        agentCount: cached.agentCount,
+        providerAddress: cached.providerAddress,
+      };
     }
 
     const [isVerified, agentId] = await Promise.all([
@@ -210,21 +251,61 @@ export class SelfAgentVerifier {
       this.registry.getAgentId(agentKey) as Promise<bigint>,
     ]);
 
-    // Fetch sybil data if agent exists and sybil check is enabled
+    // Fetch sybil data and provider address if agent exists
     let agentCount = 0n;
-    if (agentId > 0n && this.maxAgentsPerHuman > 0) {
-      const nullifier: bigint = await this.registry.getHumanNullifier(agentId);
-      agentCount = await this.registry.getAgentCountForHuman(nullifier);
+    let providerAddress = "";
+    if (agentId > 0n) {
+      const promises: Promise<unknown>[] = [];
+
+      if (this.maxAgentsPerHuman > 0) {
+        promises.push(
+          this.registry.getHumanNullifier(agentId).then(async (nullifier: bigint) => {
+            agentCount = await this.registry.getAgentCountForHuman(nullifier);
+          })
+        );
+      }
+
+      if (this.requireSelfProvider) {
+        promises.push(
+          (this.registry.getProofProvider(agentId) as Promise<string>).then((addr) => {
+            providerAddress = addr;
+          })
+        );
+      }
+
+      await Promise.all(promises);
     }
 
     this.cache.set(agentKey, {
       isVerified,
       agentId,
       agentCount,
+      providerAddress,
       expiresAt: Date.now() + this.cacheTtlMs,
     });
 
-    return { isVerified, agentId, agentCount };
+    return { isVerified, agentId, agentCount, providerAddress };
+  }
+
+  /**
+   * Get Self Protocol's own proof provider address from the registry.
+   * Cached separately since it rarely changes.
+   */
+  private async getSelfProviderAddress(): Promise<string> {
+    if (this.selfProviderCache && this.selfProviderCache.expiresAt > Date.now()) {
+      return this.selfProviderCache.address;
+    }
+
+    try {
+      const address: string = await this.registry.selfProofProvider();
+      this.selfProviderCache = {
+        address,
+        expiresAt: Date.now() + this.cacheTtlMs * 12, // Cache for longer (1 hour at default TTL)
+      };
+      return address;
+    } catch {
+      return "";
+    }
   }
 
   /**
@@ -252,6 +333,7 @@ export class SelfAgentVerifier {
   /** Clear the on-chain status cache */
   clearCache(): void {
     this.cache.clear();
+    this.selfProviderCache = null;
   }
 
   /**
@@ -259,8 +341,13 @@ export class SelfAgentVerifier {
    *
    * Adds `req.agent` with `{ address, agentKey, agentId }` on success.
    * Returns 401 on failure.
+   *
+   * Usage:
+   * ```ts
+   * app.use("/api", verifier.auth());
+   * ```
    */
-  expressMiddleware() {
+  auth() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return async (req: any, res: any, next: any) => {
       const signature = req.headers[HEADERS.SIGNATURE];
@@ -291,5 +378,12 @@ export class SelfAgentVerifier {
       };
       next();
     };
+  }
+
+  /**
+   * @deprecated Use `auth()` instead.
+   */
+  expressMiddleware() {
+    return this.auth();
   }
 }

@@ -104,7 +104,7 @@ import express from "express";
 const app = express();
 const verifier = new SelfAgentVerifier(${verifierOpts});
 
-app.use("/api", verifier.expressMiddleware());
+app.use("/api", verifier.auth());
 
 app.post("/api/data", ${asyncKw}(req, res) => {
 ${body}

@@ -3,13 +3,14 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { ethers } from "ethers";
-import { Wallet, RefreshCw, Cpu, Shield, FileText, Search, Key } from "lucide-react";
+import { Wallet, RefreshCw, Cpu, Shield, FileText, Search, Key, Fingerprint, Loader2 } from "lucide-react";
 import { connectWallet } from "@/lib/wallet";
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL } from "@/lib/constants";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { StatusDot } from "@/components/StatusDot";
+import { signInWithPasskey, sendUserOperation, encodeGuardianRevoke, isPasskeySupported, isGaslessSupported } from "@/lib/aa";
 
 interface AgentEntry {
   agentId: bigint;
@@ -27,8 +28,10 @@ export default function MyAgentsPage() {
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [lookupMode, setLookupMode] = useState<"wallet" | "key">("wallet");
+  const [lookupMode, setLookupMode] = useState<"wallet" | "key" | "passkey">("wallet");
   const [agentKeyInput, setAgentKeyInput] = useState("");
+  const [passkeyAddress, setPasskeyAddress] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   const handleConnect = async () => {
     setError("");
@@ -104,6 +107,103 @@ export default function MyAgentsPage() {
       setError(err instanceof Error ? err.message : "Failed to look up agent");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasskeySignIn = async () => {
+    setError("");
+    setLoading(true);
+    setAgents([]);
+
+    try {
+      const { walletAddress: swAddress } = await signInWithPasskey();
+      setPasskeyAddress(swAddress);
+      await loadAgentsByGuardian(swAddress);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Passkey sign-in failed");
+      setLoading(false);
+    }
+  };
+
+  const loadAgentsByGuardian = async (guardianAddress: string) => {
+    setLoading(true);
+    setError("");
+    setAgents([]);
+
+    try {
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const registry = new ethers.Contract(REGISTRY_ADDRESS, REGISTRY_ABI, provider);
+
+      // Scan Transfer events to find all minted agents, then check if guardian matches
+      const mintFilter = registry.filters.Transfer(ethers.ZeroAddress, null);
+      const mintEvents = await registry.queryFilter(mintFilter, 0, "latest");
+
+      const results: AgentEntry[] = [];
+
+      for (const event of mintEvents) {
+        const log = event as ethers.EventLog;
+        const agentId = log.args[2] as bigint;
+
+        try {
+          let guardian = ethers.ZeroAddress;
+          try {
+            guardian = await registry.agentGuardian(agentId);
+          } catch {
+            continue;
+          }
+
+          if (guardian.toLowerCase() !== guardianAddress.toLowerCase()) continue;
+
+          const agentKey: string = await registry.agentIdToPubkey(agentId);
+          const isVerified: boolean = await registry.isVerifiedAgent(agentKey);
+          const registeredAt: bigint = await registry.agentRegisteredAt(agentId);
+          const agentAddress = "0x" + agentKey.slice(26);
+
+          let hasMetadata = false;
+          try {
+            const metadata: string = await registry.getAgentMetadata(agentId);
+            hasMetadata = metadata.length > 0;
+          } catch {}
+
+          results.push({
+            agentId,
+            agentKey,
+            agentAddress,
+            isVerified,
+            registeredAt,
+            mode: "walletfree", // guardian-managed agents are walletfree or smartwallet
+            guardian,
+            hasMetadata,
+          });
+        } catch {
+          // Token was burned — skip
+        }
+      }
+
+      setAgents(results);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load agents");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasskeyRevoke = async (agentId: bigint) => {
+    setRevoking(agentId.toString());
+    setError("");
+
+    try {
+      const callData = encodeGuardianRevoke(agentId);
+      await sendUserOperation(REGISTRY_ADDRESS as `0x${string}`, callData);
+
+      // Refresh list after successful revocation
+      if (passkeyAddress) {
+        await loadAgentsByGuardian(passkeyAddress);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Revocation failed");
+    } finally {
+      setRevoking(null);
     }
   };
 
@@ -194,7 +294,7 @@ export default function MyAgentsPage() {
       </p>
 
       {/* Mode toggle */}
-      <div className="flex justify-center gap-2 mb-6">
+      <div className="flex justify-center gap-2 mb-6 flex-wrap">
         <button
           onClick={() => { setLookupMode("wallet"); setAgents([]); setError(""); }}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -217,9 +317,85 @@ export default function MyAgentsPage() {
           <Key size={16} />
           Look Up by Key
         </button>
+        {isPasskeySupported() && (
+          <button
+            onClick={() => { setLookupMode("passkey"); setAgents([]); setError(""); setPasskeyAddress(null); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              lookupMode === "passkey"
+                ? "bg-surface-2 border border-accent-success text-foreground"
+                : "bg-surface-1 border border-border text-muted hover:text-foreground"
+            }`}
+          >
+            <Fingerprint size={16} />
+            Sign in with Passkey
+          </button>
+        )}
       </div>
 
-      {lookupMode === "wallet" ? (
+      {lookupMode === "passkey" ? (
+        /* ── Passkey mode ── */
+        !passkeyAddress ? (
+          <div className="flex flex-col items-center gap-4">
+            <Fingerprint size={32} className="text-accent-success" />
+            <Button onClick={handlePasskeySignIn} variant="primary" size="lg" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Authenticating...
+                </>
+              ) : (
+                <>
+                  <Fingerprint size={18} />
+                  Sign in with Passkey
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-subtle text-center max-w-xs">
+              Uses your passkey (Face ID / fingerprint) to find agents where your smart wallet is the guardian.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted">
+                Smart Wallet:{" "}
+                <span className="font-mono text-foreground">
+                  {passkeyAddress.slice(0, 6)}...{passkeyAddress.slice(-4)}
+                </span>
+              </p>
+              <button
+                onClick={() => passkeyAddress && loadAgentsByGuardian(passkeyAddress)}
+                disabled={loading}
+                className="p-2 text-muted hover:text-foreground hover:bg-surface-2 rounded-lg transition-colors disabled:opacity-50"
+                title="Refresh"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
+
+            {error && <p className="text-sm text-accent-error">{error}</p>}
+
+            {loading && (
+              <div className="flex flex-col items-center py-8 gap-3">
+                <div className="w-8 h-8 border-2 border-border border-t-accent-success rounded-full animate-spin" />
+                <p className="text-muted text-sm">Scanning for agents...</p>
+              </div>
+            )}
+
+            {!loading && agents.length === 0 && (
+              <Card className="text-center py-8">
+                <Cpu size={32} className="text-muted mx-auto mb-3" />
+                <p className="text-muted mb-4">No agents found for this passkey.</p>
+                <Link href="/register">
+                  <Button variant="primary">Register an Agent</Button>
+                </Link>
+              </Card>
+            )}
+
+            {renderAgentCards(agents, handlePasskeyRevoke, revoking)}
+          </div>
+        )
+      ) : lookupMode === "wallet" ? (
         /* ── Wallet mode ── */
         !walletAddress ? (
           <div className="flex flex-col items-center gap-4">
@@ -270,7 +446,7 @@ export default function MyAgentsPage() {
               </Card>
             )}
 
-            {renderAgentCards(agents)}
+            {renderAgentCards(agents, null, null)}
           </div>
         )
       ) : (
@@ -313,68 +489,109 @@ export default function MyAgentsPage() {
             </Card>
           )}
 
-          {renderAgentCards(agents)}
+          {renderAgentCards(agents, null, null)}
         </div>
       )}
     </main>
   );
 }
 
-function renderAgentCards(agents: AgentEntry[]) {
+function renderAgentCards(
+  agents: AgentEntry[],
+  onRevoke: ((agentId: bigint) => void) | null,
+  revokingId: string | null
+) {
   return agents.map((agent) => (
-    <Link
-      key={agent.agentId.toString()}
-      href={`/verify?key=${encodeURIComponent(agent.agentKey)}`}
-      className="block"
-    >
-      <Card glow>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <StatusDot status={agent.isVerified ? "verified" : "revoked"} />
-            <span className="font-medium">
-              Agent #{agent.agentId.toString()}
-            </span>
-            <Badge variant={
-              agent.mode === "simple" ? "muted" :
-              agent.mode === "advanced" ? "success" : "info"
-            }>
-              {agent.mode === "simple" ? "Verified Wallet" :
-               agent.mode === "advanced" ? "Agent Identity" :
-               "Wallet-Free"}
+    <div key={agent.agentId.toString()} className="space-y-2">
+      <Link
+        href={`/verify?key=${encodeURIComponent(agent.agentKey)}`}
+        className="block"
+      >
+        <Card glow>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <StatusDot status={agent.isVerified ? "verified" : "revoked"} />
+              <span className="font-medium">
+                Agent #{agent.agentId.toString()}
+              </span>
+              <Badge variant={
+                agent.mode === "simple" ? "muted" :
+                agent.mode === "advanced" ? "success" : "info"
+              }>
+                {agent.mode === "simple" ? "Verified Wallet" :
+                 agent.mode === "advanced" ? "Agent Identity" :
+                 "Wallet-Free"}
+              </Badge>
+              {agent.guardian !== ethers.ZeroAddress && (
+                <Badge variant="success">
+                  <Fingerprint size={10} className="mr-1" />
+                  Smart Wallet
+                </Badge>
+              )}
+            </div>
+            <Badge variant={agent.isVerified ? "success" : "error"}>
+              {agent.isVerified ? "Verified" : "Revoked"}
             </Badge>
           </div>
-          <Badge variant={agent.isVerified ? "success" : "error"}>
-            {agent.isVerified ? "Verified" : "Revoked"}
-          </Badge>
-        </div>
 
-        <div className="space-y-1">
-          <p className="text-xs text-muted">
-            {agent.mode === "simple" ? "Wallet" : "Agent"} Address
-          </p>
-          <p className="font-mono text-sm break-all">
-            {agent.agentAddress}
-          </p>
-        </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted">
+              {agent.mode === "simple" ? "Wallet" : "Agent"} Address
+            </p>
+            <p className="font-mono text-sm break-all">
+              {agent.agentAddress}
+            </p>
+          </div>
 
-        <div className="flex items-center gap-3 mt-2">
-          {agent.guardian !== ethers.ZeroAddress && (
-            <span className="flex items-center gap-1 text-xs text-muted">
-              <Shield size={12} /> Guardian
-            </span>
-          )}
-          {agent.hasMetadata && (
-            <span className="flex items-center gap-1 text-xs text-muted">
-              <FileText size={12} /> Metadata
-            </span>
-          )}
-          {agent.registeredAt > 0n && (
-            <span className="text-xs text-subtle ml-auto">
-              Block {agent.registeredAt.toString()}
-            </span>
-          )}
-        </div>
-      </Card>
-    </Link>
+          <div className="flex items-center gap-3 mt-2">
+            {agent.guardian !== ethers.ZeroAddress && (
+              <span className="flex items-center gap-1 text-xs text-muted">
+                <Shield size={12} /> Guardian: {agent.guardian.slice(0, 6)}...{agent.guardian.slice(-4)}
+              </span>
+            )}
+            {agent.hasMetadata && (
+              <span className="flex items-center gap-1 text-xs text-muted">
+                <FileText size={12} /> Metadata
+              </span>
+            )}
+            {agent.registeredAt > 0n && (
+              <span className="text-xs text-subtle ml-auto">
+                Block {agent.registeredAt.toString()}
+              </span>
+            )}
+          </div>
+        </Card>
+      </Link>
+
+      {onRevoke && agent.isVerified && agent.guardian !== ethers.ZeroAddress && (
+        isGaslessSupported() ? (
+          <button
+            onClick={() => onRevoke(agent.agentId)}
+            disabled={revokingId === agent.agentId.toString()}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent-error/10 text-accent-error border border-accent-error/20 hover:bg-accent-error/20 transition-colors disabled:opacity-50"
+          >
+            {revokingId === agent.agentId.toString() ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                Revoking...
+              </>
+            ) : (
+              <>
+                <Fingerprint size={12} />
+                Revoke with Passkey (gasless)
+              </>
+            )}
+          </button>
+        ) : (
+          <p className="text-xs text-subtle px-1">
+            Gasless revocation available on mainnet. On testnet, use the{" "}
+            <Link href={`/verify?key=${encodeURIComponent(agent.agentKey)}`} className="text-accent underline">
+              Verify page
+            </Link>{" "}
+            to deregister via passport scan.
+          </p>
+        )
+      )}
+    </div>
   ));
 }

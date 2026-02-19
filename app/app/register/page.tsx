@@ -18,7 +18,8 @@ import {
   EyeOff,
   Copy,
   Smartphone,
-  Clock,
+  Fingerprint,
+  Loader2,
 } from "lucide-react";
 import { connectWallet } from "@/lib/wallet";
 import { REGISTRY_ADDRESS, RPC_URL, REGISTRY_ABI } from "@/lib/constants";
@@ -27,6 +28,8 @@ import CodeBlock from "@/components/CodeBlock";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { isPasskeySupported, createPasskeyWallet } from "@/lib/aa";
+import { savePasskey } from "@/lib/passkey-storage";
 
 // Dynamic import to avoid SSR issues with Self QR SDK
 const SelfQRcodeWrapper = dynamic(
@@ -37,7 +40,7 @@ const SelfQRcodeWrapper = dynamic(
 // Import SelfAppBuilder separately (not a component)
 let SelfAppBuilder: typeof import("@selfxyz/qrcode").SelfAppBuilder;
 
-type Mode = "simple" | "advanced" | "walletfree";
+type Mode = "simple" | "advanced" | "walletfree" | "smartwallet";
 type Step = "mode" | "connect" | "scan" | "success";
 
 export default function RegisterPage() {
@@ -51,7 +54,16 @@ export default function RegisterPage() {
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Advanced + wallet-free mode state (both generate a keypair)
+  // Smart wallet mode state
+  const [smartWalletAddress, setSmartWalletAddress] = useState<string | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setPasskeySupported(isPasskeySupported());
+  }, []);
+
+  // Advanced + wallet-free + smart-wallet mode state (all generate a keypair)
   const [agentWallet, setAgentWallet] = useState<ethers.HDNodeWallet | null>(null);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [showKeyInfo, setShowKeyInfo] = useState(false);
@@ -180,6 +192,55 @@ export default function RegisterPage() {
     setStep("scan");
   };
 
+  const handleSmartWalletStart = async () => {
+    setErrorMessage("");
+    setLoading(true);
+
+    if (!SelfAppBuilder) {
+      setErrorMessage("Self SDK still loading. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Create passkey → Kernel smart wallet (counterfactual)
+      const { credentialId, walletAddress: swAddress } =
+        await createPasskeyWallet("Self Agent ID");
+      setSmartWalletAddress(swAddress);
+
+      // 2. Generate agent keypair
+      const newWallet = ethers.Wallet.createRandom();
+      setAgentWallet(newWallet as ethers.HDNodeWallet);
+
+      // 3. Agent signs challenge
+      const agentAddress = newWallet.address.toLowerCase();
+      const sig = await signAgentChallenge(newWallet, agentAddress);
+
+      // 4. Build userDefinedData: "W" + agentAddr(40) + smartWalletAddr(40) + r(64) + s(64) + v(2)
+      const agentAddrHex = newWallet.address.slice(2).toLowerCase();
+      const guardianHex = swAddress.slice(2).toLowerCase();
+      const rHex = sig.r.slice(2);
+      const sHex = sig.s.slice(2);
+      const vHex = sig.v.toString(16).padStart(2, "0");
+      const userDefinedData = "W" + agentAddrHex + guardianHex + rHex + sHex + vHex;
+
+      // 5. Save passkey for later sign-in
+      savePasskey({
+        credentialId,
+        walletAddress: swAddress,
+        createdAt: Date.now(),
+      });
+
+      setSelfApp(buildSelfApp(agentAddress, userDefinedData));
+      setStep("scan");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`Passkey creation failed: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSuccess = () => {
     setStep("success");
   };
@@ -210,7 +271,7 @@ export default function RegisterPage() {
             Choose how your agent&apos;s on-chain identity will be created.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
             {/* Advanced mode card — recommended, shown first */}
             <button
               onClick={() => setMode("advanced")}
@@ -252,7 +313,7 @@ export default function RegisterPage() {
               </p>
             </button>
 
-            {/* Wallet-free mode card — NEW */}
+            {/* Wallet-free mode card */}
             <button
               onClick={() => setMode("walletfree")}
               className={`text-left p-5 rounded-xl border-2 transition-all ${
@@ -271,6 +332,31 @@ export default function RegisterPage() {
                 No crypto wallet needed. Just your passport and the Self app.
               </p>
             </button>
+
+            {/* Smart Wallet mode card */}
+            <button
+              onClick={() => passkeySupported && setMode("smartwallet")}
+              className={`text-left p-5 rounded-xl border-2 transition-all ${
+                !passkeySupported
+                  ? "border-border opacity-50 cursor-not-allowed"
+                  : mode === "smartwallet"
+                    ? "border-accent-success bg-surface-2"
+                    : "border-border hover:border-border-strong"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
+                  <Fingerprint size={16} className="text-accent-success" />
+                </span>
+                <span className="font-bold text-sm">Smart Wallet</span>
+                <Badge variant="success">new</Badge>
+              </div>
+              <p className="text-xs text-muted mt-2">
+                {passkeySupported
+                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless."
+                  : "Passkeys not supported in this browser."}
+              </p>
+            </button>
           </div>
 
           {/* Security explainer for selected mode */}
@@ -282,7 +368,9 @@ export default function RegisterPage() {
                   ? "How Verified Wallet works"
                   : mode === "advanced"
                     ? "How Agent Identity works"
-                    : "How No Wallet works"}
+                    : mode === "smartwallet"
+                      ? "How Smart Wallet works"
+                      : "How No Wallet works"}
               </p>
             </div>
             {mode === "simple" ? (
@@ -322,6 +410,25 @@ export default function RegisterPage() {
                 <li>
                   Your agent operates with <strong className="text-foreground">its own key</strong> &mdash;
                   your wallet key is never exposed to agent software.
+                </li>
+              </ul>
+            ) : mode === "smartwallet" ? (
+              <ul className="text-sm text-muted space-y-1.5 list-disc list-inside">
+                <li>
+                  A <strong className="text-foreground">passkey</strong> (Face ID / fingerprint) creates a
+                  Kernel smart account &mdash; no MetaMask, no seed phrase.
+                </li>
+                <li>
+                  A fresh <strong className="text-foreground">agent keypair</strong> is also generated.
+                  The agent signs requests with its own ECDSA key.
+                </li>
+                <li>
+                  The smart wallet becomes the <strong className="text-foreground">guardian</strong> &mdash;
+                  you can revoke your agent anytime with your biometrics, gaslessly.
+                </li>
+                <li>
+                  The smart wallet <strong className="text-foreground">deploys on first use</strong> (counterfactual).
+                  All management transactions are sponsored &mdash; no gas needed.
                 </li>
               </ul>
             ) : (
@@ -370,17 +477,14 @@ export default function RegisterPage() {
                       </ul>
                     </div>
 
-                    {/* AA coming soon */}
-                    <div className="bg-accent-2/5 border border-accent-2/20 rounded-lg p-3">
+                    <div className="bg-accent-success/5 border border-accent-success/20 rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-1">
-                        <Clock size={14} className="text-accent-2" />
-                        <p className="font-bold text-foreground text-xs">Smart Wallet — Coming Soon</p>
+                        <Fingerprint size={14} className="text-accent-success" />
+                        <p className="font-bold text-foreground text-xs">Prefer passkeys?</p>
                       </div>
-                      <p className="text-xs">
-                        We&apos;re building <strong className="text-foreground">account abstraction</strong> support
-                        that will replace raw key management with a smart contract wallet. This will enable
-                        email recovery, social login, and gas-free transactions &mdash; making the experience
-                        seamless for non-crypto users. Stay tuned.
+                      <p className="text-xs text-muted">
+                        Try <strong className="text-foreground">Smart Wallet</strong> mode instead &mdash; uses
+                        Face ID or fingerprint to create a smart account as guardian. No raw keys to manage.
                       </p>
                     </div>
                   </div>
@@ -394,10 +498,28 @@ export default function RegisterPage() {
               <Smartphone size={18} />
               Generate Agent &amp; Scan Passport
             </Button>
+          ) : mode === "smartwallet" ? (
+            <Button onClick={handleSmartWalletStart} variant="primary" size="lg" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Creating Passkey...
+                </>
+              ) : (
+                <>
+                  <Fingerprint size={18} />
+                  Create Passkey &amp; Generate Agent
+                </>
+              )}
+            </Button>
           ) : (
             <Button onClick={() => setStep("connect")} variant="primary" size="lg">
               {mode === "simple" ? "Continue with Verified Wallet" : "Continue with Agent Identity"}
             </Button>
+          )}
+
+          {errorMessage && (
+            <p className="text-sm text-accent-error text-center">{errorMessage}</p>
           )}
         </div>
       )}
@@ -492,6 +614,21 @@ export default function RegisterPage() {
                 </p>
                 <p className="font-mono text-sm">{walletAddress}</p>
               </>
+            ) : mode === "smartwallet" ? (
+              <>
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Fingerprint size={14} className="text-accent-success" />
+                  <p className="text-xs text-muted">Smart Wallet registration</p>
+                </div>
+                <p className="text-xs text-muted mb-1">Agent address</p>
+                <p className="font-mono text-sm">{agentWallet?.address}</p>
+                <p className="text-xs text-muted mt-2">
+                  Guardian (smart wallet):{" "}
+                  <span className="font-mono text-foreground">
+                    {smartWalletAddress?.slice(0, 6)}...{smartWalletAddress?.slice(-4)}
+                  </span>
+                </p>
+              </>
             ) : (
               <>
                 <div className="flex items-center justify-center gap-2 mb-1">
@@ -505,14 +642,41 @@ export default function RegisterPage() {
               </>
             )}
           </Card>
-          <div className="flex items-center gap-2 text-muted text-center max-w-md">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/self-icon.png" alt="Self" width={24} height={24} className="rounded flex-shrink-0" />
-            <p>
-              Scan this QR code with the Self App to verify your identity and
-              register the agent.
+          <Card className="w-full max-w-md">
+            <div className="flex items-center gap-2 mb-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/self-icon.png" alt="Self" width={28} height={28} className="rounded" />
+              <p className="font-bold text-sm">Scan with the Self App</p>
+            </div>
+            <p className="text-sm text-muted mb-3">
+              Self uses <strong className="text-foreground">zero-knowledge cryptography</strong> to
+              prove you&apos;re a real person without storing or sharing your personal data.
+              Your passport is scanned locally on your phone &mdash; only a mathematical
+              proof is sent, never your documents.
             </p>
-          </div>
+            <div className="flex gap-2">
+              <a
+                href="https://apps.apple.com/us/app/self/id6446136401"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 border border-border rounded-lg text-xs font-medium hover:border-border-strong transition-colors"
+              >
+                {/* Apple icon */}
+                <svg viewBox="0 0 384 512" width="14" height="14" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5c0 26.2 4.8 53.3 14.4 81.2 12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+                App Store
+              </a>
+              <a
+                href="https://play.google.com/store/apps/details?id=com.proofofpassportapp"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 border border-border rounded-lg text-xs font-medium hover:border-border-strong transition-colors"
+              >
+                {/* Play Store icon */}
+                <svg viewBox="0 0 512 512" width="14" height="14" fill="currentColor"><path d="M325.3 234.3L104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6l-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z"/></svg>
+                Google Play
+              </a>
+            </div>
+          </Card>
           {selfApp ? (
             <div className="rounded-xl p-4 bg-white">
               <SelfQRcodeWrapper
@@ -536,9 +700,10 @@ export default function RegisterPage() {
           )}
           <Button
             onClick={() => {
-              if (mode === "walletfree") {
+              if (mode === "walletfree" || mode === "smartwallet") {
                 setStep("mode");
                 setAgentWallet(null);
+                setSmartWalletAddress(null);
               } else {
                 setStep("connect");
               }
@@ -708,15 +873,24 @@ export default function RegisterPage() {
               <Card className="w-full">
                 <p className="font-bold text-sm mb-3">Registration Details</p>
                 <div className="space-y-3 text-sm">
-                  {mode === "walletfree" ? (
+                  {mode === "walletfree" || mode === "smartwallet" ? (
                     <>
                       <div>
                         <p className="text-xs text-muted mb-1">
                           Registration Mode
                         </p>
                         <div className="flex items-center gap-2">
-                          <Badge variant="info">Wallet-Free</Badge>
-                          <span className="text-xs text-muted">Agent owns its own NFT</span>
+                          {mode === "smartwallet" ? (
+                            <>
+                              <Badge variant="success">Smart Wallet</Badge>
+                              <span className="text-xs text-muted">Passkey guardian, gasless management</span>
+                            </>
+                          ) : (
+                            <>
+                              <Badge variant="info">Wallet-Free</Badge>
+                              <span className="text-xs text-muted">Agent owns its own NFT</span>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div>
@@ -728,6 +902,17 @@ export default function RegisterPage() {
                           {agentWallet?.address}
                         </p>
                       </div>
+                      {mode === "smartwallet" && smartWalletAddress && (
+                        <div>
+                          <p className="text-xs text-muted mb-1">
+                            Guardian (Smart Wallet)
+                            <span className="text-subtle"> &mdash; your passkey controls this address</span>
+                          </p>
+                          <p className="font-mono break-all bg-surface-2 border border-border rounded px-2 py-1">
+                            {smartWalletAddress}
+                          </p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div>
@@ -751,6 +936,20 @@ export default function RegisterPage() {
                   </div>
                 </div>
               </Card>
+
+              {mode === "smartwallet" && (
+                <Card className="w-full">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Fingerprint size={16} className="text-accent-success" />
+                    <p className="font-bold text-sm">Passkey Management</p>
+                  </div>
+                  <p className="text-xs text-muted">
+                    Your passkey can revoke this agent anytime via Face ID / fingerprint.
+                    Visit <strong className="text-foreground">My Agents</strong> and sign in with your passkey
+                    to manage your agent gaslessly. The smart wallet deploys on first management action.
+                  </p>
+                </Card>
+              )}
 
               {mode === "walletfree" && (
                 <Card className="w-full">

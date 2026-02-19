@@ -112,6 +112,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     /// @notice Maps agentId to ZK-attested credentials (populated at registration)
     mapping(uint256 => AgentCredentials) private _agentCredentials;
 
+    /// @notice Maximum agents per human (0 = unlimited, default = 1)
+    uint256 public maxAgentsPerHuman = 1;
+
     /// @notice The next agent ID to mint
     uint256 private _nextAgentId;
 
@@ -119,6 +122,7 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     // Errors
     // ====================================================
 
+    error TransferNotAllowed();
     error AgentAlreadyRegistered(bytes32 agentPubKey);
     error AgentNotRegistered(bytes32 agentPubKey);
     error NotAgentOwner(uint256 expectedNullifier, uint256 actualNullifier);
@@ -131,6 +135,8 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     error NotGuardian(uint256 agentId);
     error NotNftOwner(uint256 agentId);
     error NoGuardianSet(uint256 agentId);
+    error TooManyAgentsForHuman(uint256 nullifier, uint256 max);
+    error InvalidConfigIndex(uint8 raw);
 
     // ====================================================
     // Events (V4 additions)
@@ -144,6 +150,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
 
     /// @notice Emitted when ZK-attested credentials are stored for an agent
     event AgentCredentialsStored(uint256 indexed agentId);
+
+    /// @notice Emitted when the max agents per human is updated
+    event MaxAgentsPerHumanUpdated(uint256 max);
 
     // ====================================================
     // Constructor
@@ -220,6 +229,12 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         emit ProofProviderRemoved(provider);
     }
 
+    /// @notice Set the maximum number of agents a single human can register (0 = unlimited)
+    function setMaxAgentsPerHuman(uint256 max) external onlyOwner {
+        maxAgentsPerHuman = max;
+        emit MaxAgentsPerHumanUpdated(max);
+    }
+
     // ====================================================
     // SelfVerificationRoot Overrides
     // ====================================================
@@ -242,7 +257,7 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         } else if (raw <= 0x05) {
             idx = raw; // Binary 0x00-0x05
         } else {
-            return configIds[0]; // Unrecognized → base config
+            revert InvalidConfigIndex(raw);
         }
 
         return configIds[idx];
@@ -424,9 +439,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
 
     /// @inheritdoc IERC8004ProofOfHuman
     function sameHuman(uint256 agentIdA, uint256 agentIdB) external view override returns (bool) {
+        if (!agentHasHumanProof[agentIdA] || !agentHasHumanProof[agentIdB]) return false;
         uint256 nullA = agentNullifier[agentIdA];
-        uint256 nullB = agentNullifier[agentIdB];
-        return nullA != 0 && nullA == nullB;
+        return nullA != 0 && nullA == agentNullifier[agentIdB];
     }
 
     /// @inheritdoc IERC8004ProofOfHuman
@@ -521,6 +536,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         address to
     ) internal returns (uint256 agentId) {
         if (pubkeyToAgentId[agentPubKey] != 0) revert AgentAlreadyRegistered(agentPubKey);
+        if (maxAgentsPerHuman > 0 && activeAgentCount[nullifier] >= maxAgentsPerHuman) {
+            revert TooManyAgentsForHuman(nullifier, maxAgentsPerHuman);
+        }
 
         agentId = _nextAgentId++;
 
@@ -611,7 +629,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         }
 
         agentHasHumanProof[agentId] = false;
-        activeAgentCount[nullifier]--;
+        if (activeAgentCount[nullifier] > 0) {
+            activeAgentCount[nullifier]--;
+        }
 
         // Clear guardian, metadata, and credentials
         delete agentGuardian[agentId];
@@ -661,8 +681,13 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) internal pure returns (bytes32 agentPubKey) {
-        bytes32 messageHash = keccak256(abi.encodePacked("self-agent-id:register:", humanAddress));
+    ) internal view returns (bytes32 agentPubKey) {
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            "self-agent-id:register:",
+            humanAddress,
+            block.chainid,
+            address(this)
+        ));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         address recovered = ECDSA.recover(ethSignedHash, v, r, s);
         if (recovered != agentAddress) revert InvalidAgentSignature();
@@ -698,5 +723,17 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
 
     function _hexStringToUint8(bytes memory data, uint256 offset) internal pure returns (uint8) {
         return _hexCharToNibble(uint8(data[offset])) * 16 + _hexCharToNibble(uint8(data[offset + 1]));
+    }
+
+    // ====================================================
+    // Soulbound — Block Transfers
+    // ====================================================
+
+    /// @notice Override ERC-721 _update to make tokens soulbound (non-transferable)
+    /// @dev Allows mint (from = 0) and burn (to = 0) but blocks all transfers
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+        address from = _ownerOf(tokenId);
+        if (from != address(0) && to != address(0)) revert TransferNotAllowed();
+        return super._update(to, tokenId, auth);
     }
 }

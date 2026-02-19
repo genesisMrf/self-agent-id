@@ -78,9 +78,8 @@ contract AgentDemoVerifier is EIP712 {
         // 1. Meta-tx validation
         if (block.timestamp > deadline) revert MetaTxExpired();
         if (nonces[agentKey] != nonce) revert MetaTxInvalidNonce();
-        nonces[agentKey]++;
 
-        // 2. EIP-712 signature verification
+        // 2. EIP-712 signature verification (before nonce increment to prevent griefing)
         bytes32 structHash = keccak256(
             abi.encode(META_VERIFY_TYPEHASH, agentKey, nonce, deadline)
         );
@@ -89,16 +88,19 @@ contract AgentDemoVerifier is EIP712 {
             revert MetaTxInvalidSignature();
         }
 
-        // 3. Registry checks — basic verification only, no disclosure requirements
+        // 3. Increment nonce after successful signature verification
+        nonces[agentKey]++;
+
+        // 4. Registry checks — basic verification only, no disclosure requirements
         if (!registry.isVerifiedAgent(agentKey)) revert NotVerifiedAgent();
         agentId = registry.getAgentId(agentKey);
 
-        // 4. Effects
+        // 5. Effects
         hasVerified[agentKey] = true;
         verificationCount[agentKey]++;
         totalVerifications++;
 
-        // 5. Events
+        // 6. Events
         emit AgentChainVerified(agentKey, agentId);
         emit VerificationCompleted(
             agentKey,

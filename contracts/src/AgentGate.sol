@@ -11,6 +11,7 @@ contract AgentGate {
 
     error NotVerifiedAgent();
     error AgeRequirementNotMet(uint256 actual, uint256 required);
+    error NotAgentCaller();
 
     event AccessGranted(bytes32 indexed agentKey, uint256 agentId, uint256 olderThan);
 
@@ -43,6 +44,7 @@ contract AgentGate {
     /// @notice Execute an age-gated action (emits event as proof)
     /// @param agentKey The agent's public key (bytes32)
     function gatedAction(bytes32 agentKey) external {
+        if (msg.sender != address(uint160(uint256(agentKey)))) revert NotAgentCaller();
         if (!registry.isVerifiedAgent(agentKey)) revert NotVerifiedAgent();
 
         uint256 agentId = registry.getAgentId(agentKey);

@@ -184,6 +184,10 @@ contract SelfAgentRegistryTest is Test {
     }
 
     function test_RegisterMultipleAgents_SameHuman() public {
+        // Raise cap to allow multiple agents per human
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
         // Same nullifier (same passport), different wallet addresses
         _registerViaHub(human1, nullifier1);
         _registerViaHub(human1alt, nullifier1);
@@ -288,6 +292,9 @@ contract SelfAgentRegistryTest is Test {
     }
 
     function test_DeregisterAgent_DecrementsCount() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
         _registerViaHub(human1, nullifier1);
         _registerViaHub(human1alt, nullifier1);
         assertEq(registry.getAgentCountForHuman(nullifier1), 2);
@@ -612,6 +619,9 @@ contract SelfAgentRegistryTest is Test {
     }
 
     function test_BalanceAfterRegister() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
         _registerViaHub(human1, nullifier1);
         assertEq(registry.balanceOf(human1), 1);
 
@@ -621,6 +631,9 @@ contract SelfAgentRegistryTest is Test {
     }
 
     function test_BalanceAfterDeregister() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
         _registerViaHub(human1, nullifier1);
         _registerViaHub(human1alt, nullifier1);
 
@@ -690,8 +703,13 @@ contract SelfAgentRegistryTest is Test {
     function _signRegistration(
         uint256 privKey,
         address humanAddr
-    ) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
-        bytes32 messageHash = keccak256(abi.encodePacked("self-agent-id:register:", humanAddr));
+    ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            "self-agent-id:register:",
+            humanAddr,
+            block.chainid,
+            address(registry)
+        ));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (v, r, s) = vm.sign(privKey, ethSignedHash);
     }
@@ -1139,6 +1157,9 @@ contract SelfAgentRegistryTest is Test {
     // ====================================================
 
     function test_AllThreeModes() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
         // Simple: human1
         _registerViaHub(human1, nullifier1);
 
@@ -1338,9 +1359,9 @@ contract SelfAgentRegistryTest is Test {
         assertEq(result, registry.configIds(0));
     }
 
-    function test_MultiConfig_DefaultOnInvalidDigit() public view {
-        bytes32 result = registry.getConfigId(0, 0, bytes("R9"));
-        assertEq(result, registry.configIds(0));
+    function test_RevertWhen_InvalidConfigDigit() public {
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x39)));
+        registry.getConfigId(0, 0, bytes("R9"));
     }
 
     function test_MultiConfig_BinaryConfigByte() public view {
@@ -1426,24 +1447,24 @@ contract SelfAgentRegistryTest is Test {
         assertEq(result, registry.configIds(0), "Single byte should default to config 0");
     }
 
-    function test_MultiConfig_ASCII6DefaultsToConfig0() public view {
-        // '6' = 0x36 is out of range — should default to config 0
-        bytes32 result = registry.getConfigId(0, 0, bytes("R6"));
-        assertEq(result, registry.configIds(0), "ASCII '6' should default to config 0");
+    function test_RevertWhen_ASCII6OutOfRange() public {
+        // '6' = 0x36 is out of range — should revert
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x36)));
+        registry.getConfigId(0, 0, bytes("R6"));
     }
 
-    function test_MultiConfig_Binary6DefaultsToConfig0() public view {
-        // Binary 0x06 is out of range — should default to config 0
+    function test_RevertWhen_Binary6OutOfRange() public {
+        // Binary 0x06 is out of range — should revert
         bytes memory data = abi.encodePacked(uint8(0x01), uint8(0x06));
-        bytes32 result = registry.getConfigId(0, 0, data);
-        assertEq(result, registry.configIds(0), "Binary 0x06 should default to config 0");
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x06)));
+        registry.getConfigId(0, 0, data);
     }
 
-    function test_MultiConfig_HighByteDefaultsToConfig0() public view {
-        // 0xFF is out of both ASCII and binary range — should default to config 0
+    function test_RevertWhen_HighByteOutOfRange() public {
+        // 0xFF is out of both ASCII and binary range — should revert
         bytes memory data = abi.encodePacked(uint8(0x01), uint8(0xFF));
-        bytes32 result = registry.getConfigId(0, 0, data);
-        assertEq(result, registry.configIds(0), "0xFF should default to config 0");
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0xFF)));
+        registry.getConfigId(0, 0, data);
     }
 
     function test_MultiConfig_BinaryAllConfigs() public view {
@@ -1569,17 +1590,12 @@ contract SelfAgentRegistryTest is Test {
         registry.onVerificationSuccess(encodedOutput, tooShort);
     }
 
-    function test_MultiConfig_GapBetweenBinaryAndASCII() public view {
+    function test_RevertWhen_GapBetweenBinaryAndASCII() public {
         // Bytes 0x06-0x2F fall between binary (0-5) and ASCII ('0'=0x30)
-        // All should default to config 0
+        // All should revert with InvalidConfigIndex
         bytes memory data06 = abi.encodePacked(uint8(0x01), uint8(0x06));
-        assertEq(registry.getConfigId(0, 0, data06), registry.configIds(0));
-
-        bytes memory data10 = abi.encodePacked(uint8(0x01), uint8(0x10));
-        assertEq(registry.getConfigId(0, 0, data10), registry.configIds(0));
-
-        bytes memory data2F = abi.encodePacked(uint8(0x01), uint8(0x2F));
-        assertEq(registry.getConfigId(0, 0, data2F), registry.configIds(0));
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x06)));
+        registry.getConfigId(0, 0, data06);
     }
 
     function test_MultiConfig_SimpleRegisterAllConfigsEndToEnd() public {
@@ -1600,5 +1616,151 @@ contract SelfAgentRegistryTest is Test {
             bytes32 key = bytes32(uint256(uint160(humans[i])));
             assertTrue(registry.isVerifiedAgent(key), "Agent should be verified");
         }
+    }
+
+    // ====================================================
+    // Security Audit: Soulbound NFTs (C-1)
+    // ====================================================
+
+    function test_RevertWhen_TransferAgent() public {
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+
+        vm.prank(human1);
+        vm.expectRevert(SelfAgentRegistry.TransferNotAllowed.selector);
+        registry.transferFrom(human1, human2, agentId);
+    }
+
+    function test_RevertWhen_SafeTransferAgent() public {
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+
+        vm.prank(human1);
+        vm.expectRevert(SelfAgentRegistry.TransferNotAllowed.selector);
+        registry.safeTransferFrom(human1, human2, agentId);
+    }
+
+    function test_MintAndBurnStillWork() public {
+        // Mint via registration
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+        assertEq(registry.ownerOf(agentId), human1);
+
+        // Burn via deregistration
+        _deregisterViaHub(human1, nullifier1);
+        vm.expectRevert();
+        registry.ownerOf(agentId);
+    }
+
+    // ====================================================
+    // Security Audit: sameHuman Liveness (C-3)
+    // ====================================================
+
+    function test_SameHuman_FalseAfterRevoke() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
+        _registerViaHub(human1, nullifier1);
+        _registerViaHub(human1alt, nullifier1);
+
+        uint256 id1 = registry.getAgentId(agentKey1);
+        uint256 id1alt = registry.getAgentId(agentKey1alt);
+
+        assertTrue(registry.sameHuman(id1, id1alt));
+
+        // Revoke one agent
+        _deregisterViaHub(human1, nullifier1);
+
+        // Now sameHuman should return false
+        assertFalse(registry.sameHuman(id1, id1alt));
+    }
+
+    function test_SameHuman_TrueWhenBothActive() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
+        _registerViaHub(human1, nullifier1);
+        _registerViaHub(human1alt, nullifier1);
+
+        uint256 id1 = registry.getAgentId(agentKey1);
+        uint256 id1alt = registry.getAgentId(agentKey1alt);
+
+        assertTrue(registry.sameHuman(id1, id1alt));
+    }
+
+    // ====================================================
+    // Security Audit: Chain-Bound Signatures (H-3)
+    // ====================================================
+
+    function test_RevertWhen_AdvancedSignatureWrongChain() public {
+        // Sign with a different chainId by manually constructing the wrong hash
+        bytes32 wrongHash = keccak256(abi.encodePacked(
+            "self-agent-id:register:",
+            human1,
+            uint256(999), // wrong chain ID
+            address(registry)
+        ));
+        bytes32 ethSigned = MessageHashUtils.toEthSignedMessageHash(wrongHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(advAgentPrivKey1, ethSigned);
+
+        bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
+        bytes memory userData = _buildAdvancedUserData(0x03, advAgentAddr1, v, r, s);
+
+        vm.prank(hubMock);
+        vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
+        registry.onVerificationSuccess(encodedOutput, userData);
+    }
+
+    // ====================================================
+    // Security Audit: Sybil Cap (H-2)
+    // ====================================================
+
+    function test_DefaultMaxAgentsPerHuman() public view {
+        assertEq(registry.maxAgentsPerHuman(), 1);
+    }
+
+    function test_SetMaxAgentsPerHuman() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(5);
+        assertEq(registry.maxAgentsPerHuman(), 5);
+    }
+
+    function test_RevertWhen_ExceedMaxAgents() public {
+        // Default max is 1
+        _registerViaHub(human1, nullifier1);
+
+        // Second agent for same human should fail
+        bytes memory encodedOutput = _buildEncodedOutput(human1alt, nullifier1);
+        bytes memory userData = _buildUserData(0x01);
+
+        vm.prank(hubMock);
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.TooManyAgentsForHuman.selector, nullifier1, uint256(1)));
+        registry.onVerificationSuccess(encodedOutput, userData);
+    }
+
+    function test_UnlimitedWhenZero() public {
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(0);
+
+        _registerViaHub(human1, nullifier1);
+        _registerViaHub(human1alt, nullifier1);
+
+        assertEq(registry.getAgentCountForHuman(nullifier1), 2);
+    }
+
+    function test_DeregisterAndReregister_WithCap() public {
+        // Default max is 1
+        _registerViaHub(human1, nullifier1);
+        _deregisterViaHub(human1, nullifier1);
+
+        // Re-register should work even with max=1 (deregister decrements count)
+        _registerViaHub(human1, nullifier1);
+        assertTrue(registry.isVerifiedAgent(agentKey1));
+    }
+
+    function test_RevertWhen_SetMaxAgentsPerHuman_NotOwner() public {
+        vm.prank(human1);
+        vm.expectRevert();
+        registry.setMaxAgentsPerHuman(5);
     }
 }

@@ -1,2 +1,3 @@
 .worktrees/
 /functions/node_modules/
+python-sdk/tests/__pycache__/

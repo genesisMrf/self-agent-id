@@ -1,3 +1,20 @@
 .worktrees/
 /functions/node_modules/
-python-sdk/tests/__pycache__/
+
+# Node (test vector generation in python-sdk/)
+python-sdk/node_modules/
+python-sdk/package.json
+python-sdk/package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+*.egg
+.coverage
+htmlcov/

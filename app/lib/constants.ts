@@ -36,5 +36,37 @@ export const REGISTRY_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ] as const;
 
+// AgentGate demo contract (Celo Sepolia)
+export const AGENT_GATE_ADDRESS = "0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577";
+export const AGENT_GATE_ABI = [
+  "function checkAccess(bytes32 agentKey) view returns (uint256 agentId, uint256 olderThan, string nationality)",
+  "function gatedAction(bytes32 agentKey)",
+  "function registry() view returns (address)",
+  "error NotVerifiedAgent()",
+  "error AgeRequirementNotMet(uint256 actual, uint256 required)",
+  "event AccessGranted(bytes32 indexed agentKey, uint256 agentId, uint256 olderThan)",
+] as const;
+
+// AgentDemoVerifier V2 — EIP-712 meta-tx contract (Celo Sepolia)
+export const AGENT_DEMO_VERIFIER_ADDRESS = "0xD8ec054FD869A762bC977AC328385142303c7def";
+export const AGENT_DEMO_VERIFIER_ABI = [
+  "function metaVerifyAgent(bytes32 agentKey, uint256 nonce, uint256 deadline, bytes signature) returns (uint256 agentId, uint256 olderThan, string nationality)",
+  "function checkAccess(bytes32 agentKey) view returns (uint256 agentId, uint256 olderThan, string nationality)",
+  "function hasVerified(bytes32 agentKey) view returns (bool)",
+  "function verificationCount(bytes32 agentKey) view returns (uint256)",
+  "function nonces(bytes32 agentKey) view returns (uint256)",
+  "function totalVerifications() view returns (uint256)",
+  "function DOMAIN_SEPARATOR() view returns (bytes32)",
+  "function registry() view returns (address)",
+  "error NotVerifiedAgent()",
+  "error AgeRequirementNotMet(uint256 actual, uint256 required)",
+  "error MetaTxExpired()",
+  "error MetaTxInvalidNonce()",
+  "error MetaTxInvalidSignature()",
+  "event AgentChainVerified(bytes32 indexed agentKey, uint256 indexed agentId, uint256 olderThan, string nationality)",
+  "event VerificationCompleted(bytes32 indexed agentKey, uint256 agentCount, uint256 totalCount)",
+  "event GasSponsored(address indexed relayer, bytes32 indexed agentKey)",
+] as const;
+
 // Account Abstraction
 export const ENTRYPOINT_ADDRESS = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";

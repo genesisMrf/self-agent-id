@@ -1,0 +1,1154 @@
+"use client";
+
+import { useReducer, useCallback, useRef, useEffect } from "react";
+import { ethers } from "ethers";
+import {
+  ShieldCheck,
+  Users,
+  Lock,
+  Eye,
+  EyeOff,
+  Loader2,
+  AlertCircle,
+  Rocket,
+  Skull,
+  Terminal,
+} from "lucide-react";
+import { SelfAgent } from "@selfxyz/agent-sdk";
+import TestCard, { StepEntry } from "@/components/TestCard";
+import { Card } from "@/components/Card";
+import { Badge } from "@/components/Badge";
+import { Button } from "@/components/Button";
+import {
+  REGISTRY_ADDRESS,
+  REGISTRY_ABI,
+  RPC_URL,
+  AGENT_DEMO_VERIFIER_ADDRESS,
+  AGENT_DEMO_VERIFIER_ABI,
+} from "@/lib/constants";
+import { TESTS } from "@/lib/demo-constants";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface AgentCredentials {
+  issuingState: string;
+  name: string[];
+  nationality: string;
+  dateOfBirth: string;
+  gender: string;
+  expiryDate: string;
+  olderThan: bigint;
+  ofac: boolean[];
+}
+
+interface AgentSetup {
+  address: string;
+  agentKey: string;
+  agentId: string;
+  isVerified: boolean;
+  credentials?: AgentCredentials;
+}
+
+type TestStatus = "idle" | "running" | "success" | "error";
+
+interface TestState {
+  status: TestStatus;
+  steps: StepEntry[];
+  result: React.ReactNode | null;
+  error: string | null;
+}
+
+interface LogEntry {
+  timestamp: number;
+  testId: string;
+  message: string;
+}
+
+interface DemoState {
+  phase: "setup" | "testing" | "results";
+  privateKey: string;
+  showKey: boolean;
+  loading: boolean;
+  setupError: string;
+  agent: AgentSetup | null;
+  tests: Record<string, TestState>;
+  logs: LogEntry[];
+}
+
+type Action =
+  | { type: "SET_KEY"; key: string }
+  | { type: "TOGGLE_KEY" }
+  | { type: "LOADING" }
+  | { type: "SETUP_ERROR"; error: string }
+  | { type: "SETUP_DONE"; agent: AgentSetup }
+  | { type: "START_TESTS" }
+  | { type: "UPDATE_TEST"; testId: string; state: Partial<TestState> }
+  | { type: "ADD_LOG"; testId: string; message: string }
+  | { type: "RESET" };
+
+// ---------------------------------------------------------------------------
+// Reducer
+// ---------------------------------------------------------------------------
+
+function makeEmptyTest(): TestState {
+  return { status: "idle", steps: [], result: null, error: null };
+}
+
+const initialState: DemoState = {
+  phase: "setup",
+  privateKey: "",
+  showKey: false,
+  loading: false,
+  setupError: "",
+  agent: null,
+  tests: {
+    service: makeEmptyTest(),
+    peer: makeEmptyTest(),
+    gate: makeEmptyTest(),
+  },
+  logs: [],
+};
+
+function reducer(state: DemoState, action: Action): DemoState {
+  switch (action.type) {
+    case "SET_KEY":
+      return { ...state, privateKey: action.key, setupError: "" };
+    case "TOGGLE_KEY":
+      return { ...state, showKey: !state.showKey };
+    case "LOADING":
+      return { ...state, loading: true, setupError: "" };
+    case "SETUP_ERROR":
+      return { ...state, loading: false, setupError: action.error };
+    case "SETUP_DONE":
+      return { ...state, loading: false, agent: action.agent };
+    case "START_TESTS":
+      return {
+        ...state,
+        tests: {
+          service: { ...makeEmptyTest(), status: "running" },
+          peer: { ...makeEmptyTest(), status: "running" },
+          gate: { ...makeEmptyTest(), status: "running" },
+        },
+        logs: [],
+      };
+    case "UPDATE_TEST":
+      return {
+        ...state,
+        tests: {
+          ...state.tests,
+          [action.testId]: { ...state.tests[action.testId], ...action.state },
+        },
+      };
+    case "ADD_LOG":
+      return {
+        ...state,
+        logs: [
+          ...state.logs,
+          { timestamp: Date.now(), testId: action.testId, message: action.message },
+        ],
+      };
+    case "RESET":
+      return initialState;
+    default:
+      return state;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function buildCredentialBadges(creds: AgentCredentials): string[] {
+  const badges: string[] = [];
+  if (creds.nationality) badges.push(creds.nationality);
+  if (creds.olderThan > 0n) badges.push(`${creds.olderThan.toString()}+`);
+  if (creds.ofac?.some(Boolean)) badges.push("Not on OFAC List");
+  if (creds.name?.some((n: string) => n.length > 0)) {
+    badges.push(creds.name.filter((n: string) => n.length > 0).join(" "));
+  }
+  return badges;
+}
+
+function makeSteps(
+  labels: string[],
+  activeIndex: number,
+  timings?: (number | undefined)[],
+  error?: boolean,
+): StepEntry[] {
+  return labels.map((label, i) => ({
+    label,
+    status:
+      i < activeIndex
+        ? "done"
+        : i === activeIndex
+          ? error
+            ? "error"
+            : "active"
+          : "pending",
+    durationMs: i < activeIndex ? timings?.[i] : undefined,
+  }));
+}
+
+function allDone(labels: string[], timings?: (number | undefined)[]): StepEntry[] {
+  return labels.map((label, i) => ({
+    label,
+    status: "done" as const,
+    durationMs: timings?.[i],
+  }));
+}
+
+function shortAddr(addr: string): string {
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
+const TEST_LABELS: Record<string, string> = {
+  service: "Agent-to-Service",
+  peer: "Agent-to-Agent",
+  gate: "Agent-to-Chain",
+};
+
+const LOG_COLORS: Record<string, string> = {
+  service: "text-blue-400",
+  peer: "text-purple-400",
+  gate: "text-green-400",
+};
+
+// ---------------------------------------------------------------------------
+// Console Log Component
+// ---------------------------------------------------------------------------
+
+function ConsoleLog({ logs }: { logs: LogEntry[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  if (logs.length === 0) return null;
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-center gap-2 mb-2">
+        <Terminal size={14} className="text-muted" />
+        <span className="text-xs font-medium text-muted uppercase tracking-wider">Live Console</span>
+      </div>
+      <div
+        ref={containerRef}
+        className="bg-[#0d1117] border border-border rounded-lg p-3 max-h-60 overflow-y-auto font-mono text-xs leading-relaxed"
+      >
+        {logs.map((log, i) => {
+          const ts = new Date(log.timestamp);
+          const time = ts.toLocaleTimeString("en-US", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }) + "." + String(ts.getMilliseconds()).padStart(3, "0");
+
+          return (
+            <div key={i} className="whitespace-pre-wrap">
+              <span className="text-gray-500">[{time}</span>
+              <span className="text-gray-500"> | </span>
+              <span className={LOG_COLORS[log.testId] || "text-gray-400"}>
+                {TEST_LABELS[log.testId] || log.testId}
+              </span>
+              <span className="text-gray-500">] </span>
+              <span className="text-gray-300">{log.message}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Code snippets for "View Code"
+// ---------------------------------------------------------------------------
+
+const SERVICE_CODE = `import { SelfAgent } from "@selfxyz/agent-sdk";
+
+const agent = new SelfAgent({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  registryAddress: "${REGISTRY_ADDRESS}",
+  rpcUrl: "${RPC_URL}",
+});
+
+// 1. Verify agent + get credentials
+const verifyRes = await agent.fetch("/api/demo/verify-agent", {
+  method: "POST",
+  body: JSON.stringify({ action: "demo" }),
+});
+
+// 2. Contribute credentials to census
+const censusRes = await agent.fetch("/api/demo/census", {
+  method: "POST",
+  body: JSON.stringify({ action: "contribute" }),
+});
+
+// 3. Read aggregate stats (gated)
+const statsRes = await agent.fetch("/api/demo/census");
+const stats = await statsRes.json();
+// stats.topCountries, stats.verifiedOver18, stats.ofacClear`;
+
+const PEER_CODE = `// Client: your agent signs a request to the demo agent
+const res = await myAgent.fetch("/api/demo/agent-to-agent", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ action: "peer-verify" }),
+});
+const data = await res.json();
+// data.sameHuman, data.demoAgent, data.callerAgent
+
+// Server (demo agent): verifies caller, checks sameHuman
+const verifier = new SelfAgentVerifier({ registryAddress });
+const result = await verifier.verify({ signature, timestamp, method, url, body });
+const sameHuman = await registry.sameHuman(demoAgentId, callerAgentId);
+
+// Demo agent signs its response back
+const responseHeaders = await demoAgent.signRequest("POST", url, responseBody);`;
+
+const GATE_CODE = `import { ethers } from "ethers";
+
+// 1. Read nonce from contract
+const nonce = await verifier.nonces(agentKey);
+
+// 2. Sign EIP-712 typed data
+const domain = {
+  name: "AgentDemoVerifier", version: "1",
+  chainId: 11142220,
+  verifyingContract: AGENT_DEMO_VERIFIER_ADDRESS,
+};
+const types = {
+  MetaVerify: [
+    { name: "agentKey", type: "bytes32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+const deadline = Math.floor(Date.now() / 1000) + 300;
+const sig = await wallet.signTypedData(domain, types,
+  { agentKey, nonce, deadline });
+
+// 3. Relayer submits meta-tx on-chain
+const res = await agent.fetch("/api/demo/chain-verify", {
+  method: "POST",
+  body: JSON.stringify({ agentKey, nonce, deadline, eip712Signature: sig }),
+});
+// res: { txHash, blockNumber, explorerUrl, rateLimitRemaining }`;
+
+// ---------------------------------------------------------------------------
+// EIP-712 domain + types for AgentDemoVerifier
+// ---------------------------------------------------------------------------
+
+const EIP712_DOMAIN = {
+  name: "AgentDemoVerifier",
+  version: "1",
+  chainId: 11142220n,
+  verifyingContract: AGENT_DEMO_VERIFIER_ADDRESS as `0x${string}`,
+};
+
+const EIP712_TYPES = {
+  MetaVerify: [
+    { name: "agentKey", type: "bytes32" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Shared test runners (used by both real + fake agent)
+// ---------------------------------------------------------------------------
+
+type Dispatch = React.Dispatch<Action>;
+type LogFn = (testId: string, message: string) => void;
+
+async function runServiceTest(
+  agent: SelfAgent,
+  agentLabel: string,
+  dispatch: Dispatch,
+  log: LogFn,
+) {
+  const id = "service";
+  const steps = [
+    "ECDSA sign + POST /api/demo/verify-agent...",
+    "POST /api/demo/census — contributing credentials...",
+    "GET /api/demo/census — reading aggregate stats...",
+  ];
+  const t: (number | undefined)[] = [];
+  const totalStart = performance.now();
+
+  try {
+    log(id, `Starting Agent-to-Service test...`);
+    log(id, `Agent: ${agentLabel}`);
+
+    // Step 0: verify-agent
+    log(id, "Constructing POST /api/demo/verify-agent");
+    log(id, "Signing request body with secp256k1...");
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 0, t) } });
+    await new Promise((r) => setTimeout(r, 0));
+    const t0 = performance.now();
+
+    const verifyRes = await agent.fetch(window.location.origin + "/api/demo/verify-agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "demo-verification", timestamp: Date.now() }),
+    });
+
+    const verifyElapsed = Math.round(performance.now() - t0);
+    t.push(verifyElapsed);
+    const verifyData = await verifyRes.json();
+    log(id, `POST /api/demo/verify-agent — HTTP ${verifyRes.status} (${verifyElapsed}ms)`);
+
+    if (!verifyData.valid) {
+      log(id, `Verification failed: ${verifyData.error || "unknown"}`);
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 0, t, true),
+          error: verifyData.error || "Verification failed",
+        },
+      });
+      return;
+    }
+
+    log(id, `Agent verified — ID #${verifyData.agentId}, ${verifyData.credentials?.nationality || "?"} ${verifyData.credentials?.olderThan || "?"}+`);
+
+    // Step 1: POST census
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 1, t) } });
+    log(id, "Contributing credentials to census...");
+    const t1 = performance.now();
+
+    const censusRes = await agent.fetch(window.location.origin + "/api/demo/census", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "contribute" }),
+    });
+
+    const censusElapsed = Math.round(performance.now() - t1);
+    t.push(censusElapsed);
+    const censusData = await censusRes.json();
+
+    if (!censusRes.ok) {
+      log(id, `Census POST failed: ${censusData.error || "unknown"} (${censusElapsed}ms)`);
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 1, t, true),
+          error: censusData.error || "Census contribution failed",
+        },
+      });
+      return;
+    }
+
+    log(id, `POST /api/demo/census — HTTP ${censusRes.status} — credentials recorded (${censusElapsed}ms)`);
+
+    // Step 2: GET census stats
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 2, t) } });
+    log(id, "Fetching aggregate stats...");
+    const t2 = performance.now();
+
+    const statsRes = await agent.fetch(window.location.origin + "/api/demo/census");
+    const statsElapsed = Math.round(performance.now() - t2);
+    t.push(statsElapsed);
+    const stats = await statsRes.json();
+
+    if (!statsRes.ok) {
+      log(id, `Census GET failed: ${stats.error || "unknown"} (${statsElapsed}ms)`);
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 2, t, true),
+          error: stats.error || "Census read failed",
+        },
+      });
+      return;
+    }
+
+    const topStr = stats.topCountries?.map((c: { country: string; count: number }) => `${c.country}(${c.count})`).join(" ") || "none";
+    log(id, `GET /api/demo/census — HTTP ${statsRes.status} — Top: ${topStr} | 18+: ${stats.verifiedOver18} | OFAC clear: ${stats.ofacClear} (${statsElapsed}ms)`);
+
+    const totalElapsed = Math.round(performance.now() - totalStart);
+    log(id, `Test complete (${totalElapsed}ms total)`);
+
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "success",
+        steps: allDone(steps, t),
+        result: (
+          <div className="space-y-1 text-xs">
+            <p className="text-accent-success font-bold text-sm">Census Service — Agent Verified</p>
+            <p className="text-muted">
+              Agent ID: <span className="text-foreground font-mono">#{verifyData.agentId}</span>
+              {verifyData.credentials?.nationality && (
+                <> — <span className="text-foreground">{verifyData.credentials.nationality}</span></>
+              )}
+              {verifyData.credentials?.olderThan && Number(verifyData.credentials.olderThan) > 0 && (
+                <> <span className="text-foreground">{verifyData.credentials.olderThan}+</span></>
+              )}
+            </p>
+            <p className="text-muted">
+              Census: <span className="text-foreground">{stats.totalAgents} agents</span>
+            </p>
+            {stats.topCountries?.length > 0 && (
+              <p className="text-muted">
+                Top countries:{" "}
+                <span className="text-foreground">
+                  {stats.topCountries.map((c: { country: string; count: number }) => `${c.country} (${c.count})`).join(", ")}
+                </span>
+              </p>
+            )}
+            <p className="text-muted">
+              18+: <span className="text-foreground">{stats.verifiedOver18}</span>
+              {" | "}21+: <span className="text-foreground">{stats.verifiedOver21}</span>
+              {" | "}OFAC clear: <span className="text-foreground">{stats.ofacClear}</span>
+            </p>
+          </div>
+        ),
+      },
+    });
+  } catch (err) {
+    log(id, `Error: ${err instanceof Error ? err.message : "Request failed"}`);
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "error",
+        steps: makeSteps(steps, 0, t, true),
+        error: err instanceof Error ? err.message : "Request failed",
+      },
+    });
+  }
+}
+
+async function runPeerTest(
+  agent: SelfAgent,
+  agentLabel: string,
+  dispatch: Dispatch,
+  log: LogFn,
+) {
+  const id = "peer";
+  const steps = [
+    "ECDSA sign + POST /api/demo/agent-to-agent...",
+    "Demo agent: ecrecover \u2192 on-chain verify + sameHuman()...",
+    "Verifying demo agent\u2019s ECDSA response signature...",
+  ];
+  const t: (number | undefined)[] = [];
+  const totalStart = performance.now();
+
+  try {
+    log(id, `Starting Agent-to-Agent test...`);
+    log(id, `Agent: ${agentLabel}`);
+    log(id, "Constructing POST /api/demo/agent-to-agent");
+    log(id, "Signing request body with secp256k1...");
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 0, t) } });
+    await new Promise((r) => setTimeout(r, 0));
+    let t0 = performance.now();
+
+    const res = await agent.fetch(window.location.origin + "/api/demo/agent-to-agent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "peer-verify" }),
+    });
+
+    const elapsed = Math.round(performance.now() - t0);
+    t.push(elapsed);
+    log(id, `POST /api/demo/agent-to-agent — HTTP ${res.status} (${elapsed}ms)`);
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: "Request rejected" }));
+      log(id, `Rejected: ${errData.error || "unknown"}`);
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 1, t, true),
+          error: errData.error || `HTTP ${res.status}`,
+        },
+      });
+      return;
+    }
+
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 1, t) } });
+
+    t0 = performance.now();
+    const data = await res.json();
+    const parseElapsed = Math.round(performance.now() - t0);
+    t.push(parseElapsed);
+    log(id, `Parsing demo agent response...`);
+    log(id, `Demo agent: ID #${data.demoAgent?.agentId}, verified=${data.demoAgent?.verified}`);
+    log(id, `Caller agent: ID #${data.callerAgent?.agentId}, verified=${data.callerAgent?.verified}, sameHuman=${data.sameHuman}`);
+
+    // Verify response came from demo agent
+    const demoSig = res.headers.get("x-self-agent-signature");
+    const demoAddr = res.headers.get("x-self-agent-address");
+
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 2, t) } });
+    log(id, "Verifying demo agent's response signature...");
+    if (demoAddr) log(id, `x-self-agent-address: ${shortAddr(demoAddr)}`);
+    if (demoSig) log(id, `x-self-agent-signature: ${shortAddr(demoSig)} \u2713`);
+
+    if (data.message) log(id, `"${data.message}"`);
+
+    const totalElapsed = Math.round(performance.now() - totalStart);
+    log(id, `Test complete (${totalElapsed}ms total)`);
+
+    t.push(0);
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "success",
+        steps: allDone(steps, t),
+        result: (
+          <div className="space-y-1 text-xs">
+            <p className="text-accent-success font-bold text-sm">Agent-to-Agent Verified</p>
+            <p className="text-muted">
+              Your agent: <span className={data.callerAgent.verified ? "text-accent-success" : "text-accent-error"}>
+                {data.callerAgent.verified ? "Verified" : "Not verified"}
+              </span> (ID #{data.callerAgent.agentId})
+            </p>
+            <p className="text-muted">
+              Demo agent: <span className={data.demoAgent.verified ? "text-accent-success" : "text-accent-error"}>
+                {data.demoAgent.verified ? "Verified" : "Not registered"}
+              </span> (ID #{data.demoAgent.agentId})
+            </p>
+            <p className="text-muted">
+              Same human: <span className={data.sameHuman ? "text-accent-success" : "text-foreground"}>
+                {data.sameHuman ? "Yes" : "No (different humans)"}
+              </span>
+            </p>
+            <p className="text-muted">
+              Response signed by: <span className="font-mono text-foreground">
+                {demoAddr ? shortAddr(demoAddr) : "unsigned"}
+              </span>
+              {demoSig ? " \u2713" : " (no signature)"}
+            </p>
+            {data.message && (
+              <p className="text-muted italic mt-1">&ldquo;{data.message}&rdquo;</p>
+            )}
+          </div>
+        ),
+      },
+    });
+  } catch (err) {
+    log(id, `Error: ${err instanceof Error ? err.message : "Agent-to-agent request failed"}`);
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "error",
+        steps: makeSteps(steps, 0, t, true),
+        error: err instanceof Error ? err.message : "Agent-to-agent request failed",
+      },
+    });
+  }
+}
+
+async function runGateTest(
+  agent: SelfAgent,
+  privateKey: string,
+  agentLabel: string,
+  dispatch: Dispatch,
+  log: LogFn,
+) {
+  const id = "gate";
+  const steps = [
+    "Read nonce + sign EIP-712 meta-transaction...",
+    "POST /api/demo/chain-verify (relayer submits tx)...",
+    "Waiting for block confirmation...",
+  ];
+  const t: (number | undefined)[] = [];
+  const totalStart = performance.now();
+
+  try {
+    log(id, `Starting Agent-to-Chain test...`);
+    log(id, `Agent: ${agentLabel}`);
+
+    // Step 0: Read nonce + EIP-712 signing
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 0, t) } });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const agentKey = ethers.zeroPadValue(agent.address, 32);
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const verifierContract = new ethers.Contract(
+      AGENT_DEMO_VERIFIER_ADDRESS,
+      AGENT_DEMO_VERIFIER_ABI,
+      provider,
+    );
+
+    log(id, "Reading nonce from contract...");
+    const nonce = await verifierContract.nonces(agentKey);
+    log(id, `nonce=${nonce.toString()}`);
+
+    log(id, "Constructing EIP-712 typed data (MetaVerify)");
+    log(id, `domain: AgentDemoVerifier v1, chainId=11142220`);
+
+    const deadline = Math.floor(Date.now() / 1000) + 300;
+    const wallet = new ethers.Wallet(privateKey);
+
+    log(id, "Signing EIP-712 with agent key (secp256k1)...");
+    const eip712Signature = await wallet.signTypedData(
+      {
+        name: EIP712_DOMAIN.name,
+        version: EIP712_DOMAIN.version,
+        chainId: EIP712_DOMAIN.chainId,
+        verifyingContract: EIP712_DOMAIN.verifyingContract,
+      },
+      EIP712_TYPES,
+      { agentKey, nonce, deadline },
+    );
+    log(id, `EIP-712 signature: ${shortAddr(eip712Signature)}`);
+
+    const t0 = performance.now();
+    t.push(Math.round(t0 - totalStart));
+
+    // Step 1: POST to chain-verify
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 1, t) } });
+    log(id, "Signing HTTP request via SDK...");
+    log(id, "POST /api/demo/chain-verify — awaiting response...");
+
+    const res = await agent.fetch(window.location.origin + "/api/demo/chain-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentKey,
+        nonce: nonce.toString(),
+        deadline,
+        eip712Signature,
+      }),
+    });
+
+    const elapsed1 = Math.round(performance.now() - t0);
+    t.push(elapsed1);
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      log(id, `HTTP ${res.status} — ${data.error || "failed"}`);
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 1, t, true),
+          error: data.error || "Chain verification failed",
+        },
+      });
+      return;
+    }
+
+    // Step 2: confirmed
+    dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 2, t) } });
+
+    log(id, `HTTP ${res.status} — tx submitted (${elapsed1}ms)`);
+    log(id, `tx ${data.txHash?.slice(0, 10)}...${data.txHash?.slice(-8)} confirmed in block #${data.blockNumber}`);
+    log(id, `On-chain: signer verified as ${shortAddr(agent.address)}`);
+    if (data.credentials) {
+      log(id, `AgentChainVerified(agent=#${data.agentId}, age=${data.credentials.olderThan}+, ${data.credentials.nationality})`);
+    }
+    log(id, `GasSponsored(relayer=...)`);
+    log(id, `Verification #${data.verificationCount} for agent, #${data.totalVerifications} total`);
+    if (data.rateLimitRemaining != null) {
+      log(id, `${data.rateLimitRemaining} verification${data.rateLimitRemaining === 1 ? "" : "s"} remaining this hour`);
+    }
+    log(id, `Explorer: ${data.explorerUrl}`);
+
+    const totalElapsed = Math.round(performance.now() - totalStart);
+    log(id, `Test complete (${totalElapsed}ms total)`);
+
+    t.push(0);
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "success",
+        steps: allDone(steps, t),
+        result: (
+          <div className="space-y-1 text-xs">
+            <p className="text-accent-success font-bold text-sm">Verified On-Chain (Celo Sepolia)</p>
+            <p className="text-muted">
+              Tx:{" "}
+              <a
+                href={data.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:underline font-mono"
+              >
+                {data.txHash.slice(0, 10)}...{data.txHash.slice(-8)}
+              </a>
+            </p>
+            <p className="text-muted">
+              Block: <span className="text-foreground font-mono">#{data.blockNumber}</span>
+            </p>
+            <p className="text-muted">
+              Agent ID: <span className="text-foreground font-mono">#{data.agentId}</span>
+            </p>
+            {data.credentials?.nationality && (
+              <p className="text-muted">
+                Nationality: <span className="text-foreground">{data.credentials.nationality}</span>
+              </p>
+            )}
+            {data.credentials?.olderThan && Number(data.credentials.olderThan) > 0 && (
+              <p className="text-muted">
+                Age: <span className="text-foreground">{data.credentials.olderThan}+</span>
+              </p>
+            )}
+            <p className="text-muted">
+              Verification #{data.verificationCount} for agent, #{data.totalVerifications} total
+            </p>
+            {data.rateLimitRemaining != null && (
+              <p className="text-muted">
+                {data.rateLimitRemaining} remaining this hour
+              </p>
+            )}
+            {data.gasUsed && (
+              <p className="text-muted">
+                Gas used: <span className="text-foreground font-mono">{Number(data.gasUsed).toLocaleString()}</span>
+              </p>
+            )}
+          </div>
+        ),
+      },
+    });
+  } catch (err) {
+    log(id, `Error: ${err instanceof Error ? err.message : "Chain verification failed"}`);
+    dispatch({
+      type: "UPDATE_TEST",
+      testId: id,
+      state: {
+        status: "error",
+        steps: makeSteps(steps, 0, t, true),
+        error: err instanceof Error ? err.message : "Chain verification failed",
+      },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function DemoPage() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const agentRef = useRef<SelfAgent | null>(null);
+  const privateKeyRef = useRef<string>("");
+
+  const log = useCallback(
+    (testId: string, message: string) => {
+      dispatch({ type: "ADD_LOG", testId, message });
+    },
+    [],
+  );
+
+  // ---- Setup ----
+
+  const handleLoadAgent = useCallback(async () => {
+    dispatch({ type: "LOADING" });
+
+    try {
+      let key = state.privateKey.trim();
+      if (!key.startsWith("0x")) key = "0x" + key;
+
+      const agent = new SelfAgent({
+        privateKey: key,
+        registryAddress: REGISTRY_ADDRESS,
+        rpcUrl: RPC_URL,
+      });
+
+      agentRef.current = agent;
+      privateKeyRef.current = key;
+
+      const registered = await agent.isRegistered();
+      if (!registered) {
+        dispatch({
+          type: "SETUP_ERROR",
+          error: "Agent not registered. Register at /register first.",
+        });
+        return;
+      }
+
+      const info = await agent.getInfo();
+
+      // Fetch credentials
+      const provider = new ethers.JsonRpcProvider(RPC_URL);
+      const contract = new ethers.Contract(REGISTRY_ADDRESS, REGISTRY_ABI, provider);
+      let credentials: AgentCredentials | undefined;
+      try {
+        const raw = await contract.getAgentCredentials(info.agentId);
+        const creds: AgentCredentials = {
+          issuingState: raw.issuingState ?? raw[0] ?? "",
+          name: raw.name ?? raw[1] ?? [],
+          nationality: raw.nationality ?? raw[3] ?? "",
+          dateOfBirth: raw.dateOfBirth ?? raw[4] ?? "",
+          gender: raw.gender ?? raw[5] ?? "",
+          expiryDate: raw.expiryDate ?? raw[6] ?? "",
+          olderThan: raw.olderThan ?? raw[7] ?? 0n,
+          ofac: raw.ofac ?? raw[8] ?? [false, false, false],
+        };
+        if (creds.nationality || creds.olderThan > 0n) {
+          credentials = creds;
+        }
+      } catch {
+        // No credentials yet
+      }
+
+      dispatch({
+        type: "SETUP_DONE",
+        agent: {
+          address: info.address,
+          agentKey: info.agentKey,
+          agentId: info.agentId.toString(),
+          isVerified: info.isVerified,
+          credentials,
+        },
+      });
+    } catch (err) {
+      dispatch({
+        type: "SETUP_ERROR",
+        error: err instanceof Error ? err.message : "Failed to load agent",
+      });
+    }
+  }, [state.privateKey]);
+
+  // ---- Tests ----
+
+  const runAllTests = useCallback(async () => {
+    const agent = agentRef.current;
+    const pk = privateKeyRef.current;
+    if (!agent || !state.agent || !pk) {
+      dispatch({ type: "START_TESTS" });
+      for (const id of ["service", "peer", "gate"]) {
+        dispatch({
+          type: "UPDATE_TEST",
+          testId: id,
+          state: {
+            status: "error",
+            steps: makeSteps(["Loading agent..."], 0, undefined, true),
+            error: "No agent loaded \u2014 enter a private key above",
+          },
+        });
+      }
+      return;
+    }
+
+    dispatch({ type: "START_TESTS" });
+
+    const agentLabel = `${shortAddr(agent.address)} (ID #${state.agent.agentId}${state.agent.credentials ? `, ${state.agent.credentials.olderThan.toString()}+ ${state.agent.credentials.nationality}` : ""})`;
+
+    await Promise.all([
+      runServiceTest(agent, agentLabel, dispatch, log),
+      runPeerTest(agent, agentLabel, dispatch, log),
+      runGateTest(agent, pk, agentLabel, dispatch, log),
+    ]);
+  }, [state.agent, log]);
+
+  const runFakeAgent = useCallback(async () => {
+    const fakeWallet = ethers.Wallet.createRandom();
+    const fakeAgent = new SelfAgent({
+      privateKey: fakeWallet.privateKey,
+      registryAddress: REGISTRY_ADDRESS,
+      rpcUrl: RPC_URL,
+    });
+
+    dispatch({ type: "START_TESTS" });
+
+    const fakeLabel = `${shortAddr(fakeWallet.address)} (unregistered)`;
+    log("service", `Starting test with FAKE agent...`);
+    log("service", `Generated random key: ${shortAddr(fakeWallet.address)} (unregistered)`);
+    log("peer", `Starting test with FAKE agent...`);
+    log("peer", `Generated random key: ${shortAddr(fakeWallet.address)} (unregistered)`);
+    log("gate", `Starting test with FAKE agent...`);
+    log("gate", `Generated random key: ${shortAddr(fakeWallet.address)} (unregistered)`);
+
+    await Promise.all([
+      runServiceTest(fakeAgent, fakeLabel, dispatch, log),
+      runPeerTest(fakeAgent, fakeLabel, dispatch, log),
+      runGateTest(fakeAgent, fakeWallet.privateKey, fakeLabel, dispatch, log),
+    ]);
+  }, [log]);
+
+  // ---- Render ----
+
+  const testIcons = { service: ShieldCheck, peer: Users, gate: Lock } as const;
+
+  return (
+    <main className="min-h-screen max-w-5xl mx-auto px-6 pt-24 pb-12 space-y-8">
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-2">
+          <span className="text-gradient">Live</span> Demo
+        </h1>
+        <p className="text-muted max-w-lg mx-auto">
+          Test Self Agent ID integration end-to-end. Load your registered agent,
+          then run real verification tests against on-chain contracts and service endpoints.
+        </p>
+      </div>
+
+      {/* Setup / Agent Info Card */}
+      {!state.agent ? (
+        <Card className="max-w-md mx-auto">
+          <h2 className="font-semibold mb-4">Load Your Agent</h2>
+          <p className="text-xs text-muted mb-4">
+            Enter the private key of a registered agent. The key stays in your browser
+            and is never sent to the server.
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLoadAgent();
+            }}
+            className="space-y-3"
+          >
+            <div className="relative">
+              <input
+                type={state.showKey ? "text" : "password"}
+                value={state.privateKey}
+                onChange={(e) => dispatch({ type: "SET_KEY", key: e.target.value })}
+                placeholder="0x... (agent private key)"
+                className="w-full px-4 py-3 pr-10 bg-surface-2 border border-border rounded-lg focus:border-accent focus:ring-0 font-mono text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => dispatch({ type: "TOGGLE_KEY" })}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+              >
+                {state.showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+
+            {state.setupError && (
+              <div className="flex items-start gap-2 text-accent-error text-sm">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>{state.setupError}</span>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={state.loading || !state.privateKey.trim()}
+              className="w-full"
+            >
+              {state.loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <Rocket size={16} />
+                  Load Agent
+                </>
+              )}
+            </Button>
+          </form>
+        </Card>
+      ) : (
+        <Card variant="success" className="max-w-md mx-auto">
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldCheck size={20} className="text-accent-success" />
+            <span className="font-semibold">Agent Loaded</span>
+            <button
+              onClick={() => dispatch({ type: "RESET" })}
+              className="ml-auto text-xs text-muted hover:text-foreground"
+            >
+              Change
+            </button>
+          </div>
+          <div className="text-sm space-y-1.5">
+            <div className="flex justify-between">
+              <span className="text-muted">Address</span>
+              <span className="font-mono text-xs">
+                {state.agent.address.slice(0, 8)}...{state.agent.address.slice(-6)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted">Agent ID</span>
+              <span className="font-mono">#{state.agent.agentId}</span>
+            </div>
+            {state.agent.credentials && (() => {
+              const badges = buildCredentialBadges(state.agent.credentials!).filter(b => b.trim());
+              return badges.length > 0 ? (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {badges.map((b, i) => (
+                    <Badge key={i} variant="success">{b}</Badge>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+          </div>
+        </Card>
+      )}
+
+      {/* Test buttons */}
+      <div className="flex items-center justify-center gap-3">
+        <Button
+          onClick={runAllTests}
+          disabled={Object.values(state.tests).some((t) => t.status === "running")}
+          size="lg"
+        >
+          {Object.values(state.tests).some((t) => t.status === "running") ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              Running Tests...
+            </>
+          ) : (
+            <>
+              <Rocket size={18} />
+              Run All Tests
+            </>
+          )}
+        </Button>
+        <Button
+          onClick={runFakeAgent}
+          disabled={Object.values(state.tests).some((t) => t.status === "running")}
+          size="lg"
+          variant="secondary"
+        >
+          <Skull size={18} />
+          Test with Fake Agent
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {TESTS.map((test) => (
+          <TestCard
+            key={test.id}
+            title={test.title}
+            icon={testIcons[test.id]}
+            description={test.description}
+            steps={state.tests[test.id].steps}
+            status={state.tests[test.id].status}
+            result={state.tests[test.id].result}
+            error={state.tests[test.id].error}
+            codeSnippet={
+              test.id === "service"
+                ? SERVICE_CODE
+                : test.id === "peer"
+                  ? PEER_CODE
+                  : GATE_CODE
+            }
+            codeLanguage="typescript"
+          />
+        ))}
+      </div>
+
+      {/* Live Console Log */}
+      <ConsoleLog logs={state.logs} />
+    </main>
+  );
+}

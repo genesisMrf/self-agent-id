@@ -9,6 +9,7 @@ const links = [
   { href: "/register", label: "Register" },
   { href: "/my-agents", label: "My Agents" },
   { href: "/verify", label: "Verify" },
+  { href: "/demo", label: "Demo" },
   { href: "/explainer", label: "How It Works" },
   { href: "/erc8004", label: "ERC-8004" },
 ];

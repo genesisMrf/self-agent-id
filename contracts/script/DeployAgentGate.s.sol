@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import { AgentGate } from "../src/AgentGate.sol";
+import { BaseScript } from "./Base.s.sol";
+import { console } from "forge-std/console.sol";
+
+/// @title DeployAgentGate
+/// @notice Deploys AgentGate pointing to the existing SelfAgentRegistry
+/// @dev Requires environment variables:
+///      - PRIVATE_KEY: Deployer private key
+///      - REGISTRY_ADDRESS: SelfAgentRegistry address
+///        Celo Sepolia V4: 0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b
+contract DeployAgentGate is BaseScript {
+    function run() public broadcast returns (AgentGate gate) {
+        address registryAddress = vm.envAddress("REGISTRY_ADDRESS");
+
+        gate = new AgentGate(registryAddress);
+
+        console.log("AgentGate deployed to:", address(gate));
+        console.log("Registry:", registryAddress);
+    }
+}

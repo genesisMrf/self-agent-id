@@ -17,10 +17,12 @@ import {
   Eye,
   EyeOff,
   Copy,
+  Check,
   Smartphone,
   Fingerprint,
   Loader2,
   Shield,
+  Rocket,
 } from "lucide-react";
 import MatrixRain from "@/components/MatrixRain";
 import { connectWallet } from "@/lib/wallet";
@@ -76,6 +78,7 @@ export default function RegisterPage() {
   }, []);
 
   // Disclosure selection state
+  const [showDisclosures, setShowDisclosures] = useState(false);
   const [disclosures, setDisclosures] = useState({
     nationality: false,
     name: false,
@@ -92,6 +95,7 @@ export default function RegisterPage() {
   const [showKeyInfo, setShowKeyInfo] = useState(false);
   const [activeAgentSnippet, setActiveAgentSnippet] = useState(0);
   const [activeAgentFeatures, setActiveAgentFeatures] = useState<Set<string>>(new Set());
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const toggleAgentFeature = (id: string) => {
     setActiveAgentFeatures((prev) => {
@@ -302,8 +306,10 @@ export default function RegisterPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   return (
@@ -542,68 +548,82 @@ export default function RegisterPage() {
 
           {/* Disclosure toggles */}
           <Card className="w-full">
-            <div className="flex items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setShowDisclosures((v) => !v)}
+              className="flex items-center gap-2 w-full text-left"
+            >
               <Shield size={16} className="text-accent" />
               <p className="font-bold text-sm">Credential Disclosures</p>
               <span className="text-xs text-subtle">(optional)</span>
-            </div>
-            <p className="text-xs text-muted mb-2">
-              Choose what your agent can carry as verified claims. Your raw passport data
-              is <strong className="text-foreground">never stored or shared</strong> &mdash;
-              the Self app generates a <strong className="text-foreground">zero-knowledge proof</strong> on
-              your phone, and only the attested result (e.g. &ldquo;nationality: GBR&rdquo; or
-              &ldquo;over 18&rdquo;) is stored on-chain. No personal documents ever leave your device.
-            </p>
-            <p className="text-xs text-muted mb-4">
-              All disclosures are optional. Unselected fields are not included.
-            </p>
+              {showDisclosures ? (
+                <ChevronUp size={16} className="ml-auto text-muted" />
+              ) : (
+                <ChevronDown size={16} className="ml-auto text-muted" />
+              )}
+            </button>
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {([
-                ["nationality", "Nationality", false],
-                ["name", "Full Name", false],
-                ["date_of_birth", "Date of Birth", false],
-                ["gender", "Gender", false],
-                ["issuing_state", "Issuing State", false],
-                ["ofac", "Not on OFAC List", false],
-              ] as const).map(([key, label, disabled]) => (
-                <label
-                  key={key}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 border border-border transition-colors text-sm ${
-                    disabled
-                      ? "opacity-40 cursor-not-allowed"
-                      : "hover:border-border-strong cursor-pointer"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={disclosures[key] as boolean}
-                    disabled={disabled}
+            {showDisclosures && (
+              <div className="mt-3">
+                <p className="text-xs text-muted mb-2">
+                  Choose what your agent can carry as verified claims. Your raw passport data
+                  is <strong className="text-foreground">never stored or shared</strong> &mdash;
+                  the Self app generates a <strong className="text-foreground">zero-knowledge proof</strong> on
+                  your phone, and only the attested result (e.g. &ldquo;nationality: GBR&rdquo; or
+                  &ldquo;over 18&rdquo;) is stored on-chain. No personal documents ever leave your device.
+                </p>
+                <p className="text-xs text-muted mb-4">
+                  All disclosures are optional. Unselected fields are not included.
+                </p>
+
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {([
+                    ["nationality", "Nationality", false],
+                    ["name", "Full Name", false],
+                    ["date_of_birth", "Date of Birth", false],
+                    ["gender", "Gender", false],
+                    ["issuing_state", "Issuing State", false],
+                    ["ofac", "Not on OFAC List", false],
+                  ] as const).map(([key, label, disabled]) => (
+                    <label
+                      key={key}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-2 border border-border transition-colors text-sm ${
+                        disabled
+                          ? "opacity-40 cursor-not-allowed"
+                          : "hover:border-border-strong cursor-pointer"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={disclosures[key] as boolean}
+                        disabled={disabled}
+                        onChange={(e) =>
+                          setDisclosures((d) => ({ ...d, [key]: e.target.checked }))
+                        }
+                        className="rounded border-border text-accent focus:ring-accent"
+                      />
+                      {label}
+                      {disabled && <span className="text-xs text-subtle ml-auto">coming soon</span>}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-muted">Age Verification</label>
+                  <select
+                    value={disclosures.minimumAge}
                     onChange={(e) =>
-                      setDisclosures((d) => ({ ...d, [key]: e.target.checked }))
+                      setDisclosures((d) => ({ ...d, minimumAge: Number(e.target.value) }))
                     }
-                    className="rounded border-border text-accent focus:ring-accent"
-                  />
-                  {label}
-                  {disabled && <span className="text-xs text-subtle ml-auto">coming soon</span>}
-                </label>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <label className="text-sm text-muted">Age Verification</label>
-              <select
-                value={disclosures.minimumAge}
-                onChange={(e) =>
-                  setDisclosures((d) => ({ ...d, minimumAge: Number(e.target.value) }))
-                }
-                className="bg-surface-2 border border-border rounded-lg px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-              >
-                <option value={0}>None</option>
-                <option value={18}>Over 18</option>
-                <option value={21}>Over 21</option>
-              </select>
-            </div>
+                    className="bg-surface-2 border border-border rounded-lg px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+                  >
+                    <option value={0}>None</option>
+                    <option value={18}>Over 18</option>
+                    <option value={21}>Over 21</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </Card>
 
           {mode === "walletfree" ? (
@@ -912,11 +932,11 @@ export default function RegisterPage() {
                         {agentWallet?.address}
                       </p>
                       <button
-                        onClick={() => copyToClipboard(agentWallet?.address || "")}
+                        onClick={() => copyToClipboard(agentWallet?.address || "", "address")}
                         className="p-2 text-muted hover:text-foreground bg-surface-2 hover:bg-surface-1 rounded border border-border transition-colors shrink-0"
                         title="Copy"
                       >
-                        <Copy size={14} />
+                        {copiedField === "address" ? <Check size={14} className="text-accent-success" /> : <Copy size={14} />}
                       </button>
                     </div>
                   </div>
@@ -940,11 +960,11 @@ export default function RegisterPage() {
                         {showPrivateKey ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                       <button
-                        onClick={() => copyToClipboard(agentWallet?.privateKey || "")}
+                        onClick={() => copyToClipboard(agentWallet?.privateKey || "", "privateKey")}
                         className="p-2 text-muted hover:text-foreground bg-surface-2 hover:bg-surface-1 rounded border border-border transition-colors shrink-0"
                         title="Copy"
                       >
-                        <Copy size={14} />
+                        {copiedField === "privateKey" ? <Check size={14} className="text-accent-success" /> : <Copy size={14} />}
                       </button>
                     </div>
                   </div>
@@ -1104,18 +1124,28 @@ export default function RegisterPage() {
             </>
           )}
 
-          <Button
-            onClick={() => {
-              const key = mode === "simple"
-                ? ethers.zeroPadValue(walletAddress!, 32)
-                : ethers.zeroPadValue(agentWallet!.address, 32);
-              router.push("/verify?key=" + encodeURIComponent(key));
-            }}
-            variant="primary"
-            size="lg"
-          >
-            Verify Agent
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              onClick={() => {
+                const key = mode === "simple"
+                  ? ethers.zeroPadValue(walletAddress!, 32)
+                  : ethers.zeroPadValue(agentWallet!.address, 32);
+                router.push("/verify?key=" + encodeURIComponent(key));
+              }}
+              variant="primary"
+              size="lg"
+            >
+              Verify Agent
+            </Button>
+            <Button
+              onClick={() => router.push("/demo")}
+              variant="secondary"
+              size="lg"
+            >
+              <Rocket size={18} />
+              Try Demo
+            </Button>
+          </div>
         </div>
       )}
     </main>

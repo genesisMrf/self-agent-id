@@ -585,7 +585,7 @@ export default function ExplainerPage() {
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold text-center mb-4">Live Demo</h2>
           <p className="text-center text-muted mb-10">
-            Register a new agent or verify an existing one on Celo Sepolia.
+            Register a new agent or verify an existing one on Celo.
           </p>
 
           <div className="flex justify-center mb-10">

@@ -659,17 +659,17 @@ function buildTestSetupTS(): string {
   return `import { SelfAgent } from "@selfxyz/agent-sdk";
 import { ethers } from "ethers";
 
+// Celo Sepolia testnet — for mainnet use https://forno.celo.org + mainnet addresses
 const REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b";
 const RPC = "https://forno.celo-sepolia.celo-testnet.org";
 const DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app";
 const DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app";
 const DEMO_APP = "https://agent-id.self.xyz"; // chain-verify relayer
-const VERIFIER = "0xD8ec054FD869A762bC977AC328385142303c7def";
+const VERIFIER = "0x26e05bF632fb5bACB665ab014240EAC1413dAE35";
 
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY!,
-  registryAddress: REGISTRY,
-  rpcUrl: RPC,
+  network: "testnet", // or omit for mainnet
 });
 
 async function runTests() {
@@ -765,12 +765,13 @@ from web3 import Web3
 from eth_account import Account
 from eth_account.messages import encode_defunct, encode_structured_data
 
+# Celo Sepolia testnet — for mainnet use https://forno.celo.org + mainnet addresses
 REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"
 RPC = "https://forno.celo-sepolia.celo-testnet.org"
 DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
 DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
 DEMO_APP = "https://agent-id.self.xyz"
-VERIFIER = "0xD8ec054FD869A762bC977AC328385142303c7def"
+VERIFIER = "0x26e05bF632fb5bACB665ab014240EAC1413dAE35"
 
 agent = Account.from_key(os.environ["AGENT_PRIVATE_KEY"])
 w3 = Web3(Web3.HTTPProvider(RPC))
@@ -898,13 +899,14 @@ npx tsx -e "
 const { SelfAgent } = require('@selfxyz/agent-sdk');
 const { ethers } = require('ethers');
 
+// Celo Sepolia testnet — for mainnet use forno.celo.org + mainnet addresses
 const REGISTRY = '0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b';
-const VERIFIER = '0xD8ec054FD869A762bC977AC328385142303c7def';
+const VERIFIER = '0x26e05bF632fb5bACB665ab014240EAC1413dAE35';
 const RPC = 'https://forno.celo-sepolia.celo-testnet.org';
 
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY,
-  registryAddress: REGISTRY, rpcUrl: RPC,
+  network: 'testnet', // or omit for mainnet
 });
 
 (async () => {

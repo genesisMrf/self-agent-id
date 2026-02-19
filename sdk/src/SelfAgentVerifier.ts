@@ -192,12 +192,20 @@ export class SelfAgentVerifier {
 
     // 6. Provider check: ensure agent was verified by Self Protocol
     if (this.requireSelfProvider && agentId > 0n) {
-      const selfProvider = await this.getSelfProviderAddress();
-      if (
-        selfProvider &&
-        providerAddress &&
-        providerAddress.toLowerCase() !== selfProvider.toLowerCase()
-      ) {
+      let selfProvider: string;
+      try {
+        selfProvider = await this.getSelfProviderAddress();
+      } catch {
+        return {
+          valid: false,
+          agentAddress: signerAddress,
+          agentKey,
+          agentId,
+          agentCount,
+          error: "Unable to verify proof provider — RPC error",
+        };
+      }
+      if (providerAddress.toLowerCase() !== selfProvider.toLowerCase()) {
         return {
           valid: false,
           agentAddress: signerAddress,
@@ -296,16 +304,13 @@ export class SelfAgentVerifier {
       return this.selfProviderCache.address;
     }
 
-    try {
-      const address: string = await this.registry.selfProofProvider();
-      this.selfProviderCache = {
-        address,
-        expiresAt: Date.now() + this.cacheTtlMs * 12, // Cache for longer (1 hour at default TTL)
-      };
-      return address;
-    } catch {
-      return "";
-    }
+    // No try/catch — let RPC errors propagate to fail closed
+    const address: string = await this.registry.selfProofProvider();
+    this.selfProviderCache = {
+      address,
+      expiresAt: Date.now() + this.cacheTtlMs * 12, // Cache for longer (1 hour at default TTL)
+    };
+    return address;
   }
 
   /**

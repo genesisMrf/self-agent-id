@@ -12,8 +12,8 @@ export const REGISTRY_ABI = [
   "function getAgentCredentials(uint256 agentId) view returns ((string issuingState, string[] name, string idNumber, string nationality, string dateOfBirth, string gender, string expiryDate, uint256 olderThan, bool[3] ofac))",
 ] as const;
 
-/** Default deployed SelfAgentRegistry on Celo Sepolia */
-export const DEFAULT_REGISTRY_ADDRESS = "0x24D46f30d41e91B3E0d1A8EB250FEa4B90270251";
+/** Default deployed SelfAgentRegistry on Celo Sepolia (V4 — multi-config + credentials) */
+export const DEFAULT_REGISTRY_ADDRESS = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b";
 
 /** Default RPC URL (Celo Sepolia) */
 export const DEFAULT_RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
@@ -21,8 +21,8 @@ export const DEFAULT_RPC_URL = "https://forno.celo-sepolia.celo-testnet.org";
 /** Default signature validity window (5 minutes) */
 export const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000;
 
-/** Default cache TTL for on-chain status (5 minutes) */
-export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Default cache TTL for on-chain status (1 minute) */
+export const DEFAULT_CACHE_TTL_MS = 60_000;
 
 /** Request headers used by the signing protocol */
 export const HEADERS = {

@@ -89,6 +89,18 @@ impl SelfAgent {
         Ok(ProviderBuilder::new().connect_http(url))
     }
 
+    /// Create a provider with wallet attached — required for write operations.
+    fn make_signer_provider(
+        &self,
+    ) -> Result<impl alloy::providers::Provider + Clone, crate::Error> {
+        let url: reqwest::Url = self
+            .rpc_url
+            .parse()
+            .map_err(|_| crate::Error::InvalidRpcUrl)?;
+        let wallet = alloy::network::EthereumWallet::from(self.signer.clone());
+        Ok(ProviderBuilder::new().wallet(wallet).connect_http(url))
+    }
+
     /// Check if this agent is registered and verified on-chain.
     pub async fn is_registered(&self) -> Result<bool, crate::Error> {
         let provider = self.make_provider()?;
@@ -273,7 +285,7 @@ impl SelfAgent {
         url: Option<String>,
         skills: Option<Vec<AgentSkill>>,
     ) -> Result<B256, crate::Error> {
-        let provider = self.make_provider()?;
+        let provider = self.make_signer_provider()?;
         let registry = IAgentRegistry::new(self.registry_address, &provider);
 
         let agent_id = registry
@@ -290,6 +302,11 @@ impl SelfAgent {
             .call()
             .await
             .map_err(|e| crate::Error::RpcError(e.to_string()))?;
+        if proof_provider_addr == Address::ZERO {
+            return Err(crate::Error::RpcError(
+                "Agent has no proof provider — cannot build card".into(),
+            ));
+        }
 
         let proof_provider =
             IHumanProofProvider::new(proof_provider_addr, &provider);
@@ -330,7 +347,7 @@ impl SelfAgent {
                 nationality: non_empty(&creds.nationality),
                 issuing_state: non_empty(&creds.issuingState),
                 older_than: if older_than > 0 { Some(older_than) } else { None },
-                ofac_clean: if ofac_screened { Some(creds.ofac[0]) } else { None },
+                ofac_clean: if ofac_screened { Some(true) } else { None },
                 has_name: if !creds.name.is_empty() { Some(true) } else { None },
                 has_date_of_birth: non_empty(&creds.dateOfBirth).map(|_| true),
                 has_gender: non_empty(&creds.gender).map(|_| true),

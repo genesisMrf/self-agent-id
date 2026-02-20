@@ -133,6 +133,8 @@ class SelfAgent:
             raise ValueError("Agent not registered")
 
         provider_addr = self._registry.functions.getProofProvider(agent_id).call()
+        if not provider_addr or provider_addr == "0x" + "0" * 40:
+            raise ValueError("Agent has no proof provider — cannot build card")
         provider_contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(provider_addr), abi=PROVIDER_ABI,
         )
@@ -160,7 +162,7 @@ class SelfAgent:
                 nationality=creds[3] or None,
                 issuing_state=creds[0] or None,
                 older_than=older_than or None,
-                ofac_clean=ofac[0] if ofac_screened else None,
+                ofac_clean=True if ofac_screened else None,
                 has_name=True if creds[1] else None,
                 has_date_of_birth=True if creds[4] else None,
                 has_gender=True if creds[5] else None,

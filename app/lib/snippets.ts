@@ -797,7 +797,7 @@ export function getServiceSnippets(
     {
       title: "Agent \u2192 Service",
       description:
-        "Verify that an AI agent calling your API is human-backed. The SDK handles signature verification, on-chain checks, and caching.",
+        "Verify that an AI agent calling your API is human-backed. The SDK recovers the signer from the ECDSA signature, checks isVerifiedAgent() on-chain, and optionally reads ZK-attested credentials and enforces sybil limits.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk) \u2192 Create verifier \u2192 Add middleware \u2192 Done",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildServiceTS(f) },
@@ -807,7 +807,7 @@ export function getServiceSnippets(
     {
       title: "Agent \u2192 Agent",
       description:
-        "Verify a peer agent is human-backed before collaborating. Prevents sybil attacks in multi-agent systems.",
+        "Verify a peer agent is human-backed before collaborating. Recover the signer from their ECDSA signature, check isVerifiedAgent() on-chain, and use sameHuman() to detect sybil attacks in multi-agent systems.",
       flow: "Receive signed message \u2192 Verify via SDK \u2192 Check identity \u2192 Collaborate",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildAgentAgentTS(f, registryAddress, rpcUrl) },
@@ -818,7 +818,7 @@ export function getServiceSnippets(
     {
       title: "Agent \u2192 Chain",
       description:
-        "Gate your smart contract so only human-backed agents can call it. The contract derives the agent key from msg.sender and checks the registry.",
+        "Gate your smart contract so only human-backed agents can call it. The contract derives the agent key as bytes32(uint256(uint160(msg.sender))) and calls isVerifiedAgent() on the registry. No SDK needed \u2014 pure on-chain verification.",
       flow: "Agent calls your contract \u2192 Modifier derives key from msg.sender \u2192 Checks registry \u2192 Executes",
       snippets: [
         { label: "Solidity", language: "solidity", code: buildAgentChainSolidity(f, registryAddress) },
@@ -838,7 +838,7 @@ export function getAgentSnippets(
     {
       title: "Sign Requests",
       description:
-        "Your agent signs every outgoing request with its private key. Services that support Self Agent ID verify your agent automatically.",
+        "Your agent signs every outgoing HTTP request with ECDSA (timestamp + method + URL + body hash). Services recover the signer from the signature and check isVerifiedAgent() on-chain \u2014 no API keys or tokens needed.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk) \u2192 Create agent \u2192 Use agent.fetch() \u2192 Service verifies automatically",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildSignRequestsTS(f) },
@@ -866,7 +866,7 @@ print(f"Agent ID: {info.agent_id}, Verified: {info.is_verified}")`,
     {
       title: "Submit Transactions",
       description:
-        "Your agent address is a real Ethereum wallet. Fund it with gas and it can call smart contracts directly. Contracts verify your agent on-chain via msg.sender.",
+        "Your agent address is a real Ethereum wallet. Fund it with gas and it can call smart contracts directly. Contracts derive bytes32(uint256(uint160(msg.sender))) and check the registry \u2014 no off-chain signature needed for on-chain calls.",
       flow: "Fund agent wallet with gas \u2192 Agent calls contract \u2192 Contract checks registry \u2192 Action proceeds",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildSubmitTxTS(rpcUrl) },
@@ -878,7 +878,7 @@ print(f"Agent ID: {info.agent_id}, Verified: {info.is_verified}")`,
     {
       title: "Test Your Setup",
       description:
-        "Run the same demo tests from your terminal that the browser demo runs. Hits the live Google Cloud Functions for service verification, agent-to-agent peer check, and on-chain meta-transaction verification.",
+        "Run the same demo tests from your terminal that the browser demo runs. Hits the live Cloud Run endpoints for service verification, agent-to-agent peer check, and on-chain meta-transaction verification.",
       flow: "Set AGENT_PRIVATE_KEY → Run script → Hits live endpoints → Confirms agent works end-to-end",
       snippets: [
         { label: "TypeScript", language: "typescript", code: buildTestSetupTS() },

@@ -3,8 +3,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { type NetworkId, type NetworkConfig, getNetwork, isNetworkReady, DEFAULT_NETWORK } from "./network";
 
-const STORAGE_KEY = "self-agent-id:network";
-
 interface NetworkContextValue {
   network: NetworkConfig;
   networkId: NetworkId;
@@ -13,13 +11,12 @@ interface NetworkContextValue {
 
 const NetworkContext = createContext<NetworkContextValue | null>(null);
 
-/** Validate a stored network ID: must be a known ID AND have required config (registry address) */
+/** Resolve network from URL ?network= param, falling back to DEFAULT_NETWORK */
 function resolveNetworkId(candidate: string | null): NetworkId {
   if (candidate === "celo-mainnet" || candidate === "celo-sepolia") {
     const config = getNetwork(candidate);
     if (isNetworkReady(config)) return candidate;
   }
-  // Fall back to default, or ultimately to celo-sepolia if default isn't ready either
   const defaultConfig = getNetwork(DEFAULT_NETWORK);
   if (isNetworkReady(defaultConfig)) return DEFAULT_NETWORK;
   return "celo-sepolia";
@@ -29,24 +26,25 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   const [networkId, setNetworkIdState] = useState<NetworkId>(() => resolveNetworkId(null));
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage on mount
+  // Hydrate from URL query param on mount
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const resolved = resolveNetworkId(stored);
+    const params = new URLSearchParams(window.location.search);
+    const resolved = resolveNetworkId(params.get("network"));
     setNetworkIdState(resolved);
-    // If stored value was invalid/unready, clean it up
-    if (stored && stored !== resolved) {
-      localStorage.setItem(STORAGE_KEY, resolved);
-    }
+
+    // Clean up any old localStorage entry
+    try { localStorage.removeItem("self-agent-id:network"); } catch {}
+
     setHydrated(true);
   }, []);
 
   const setNetworkId = (id: NetworkId) => {
-    // Only allow switching to a network that's actually configured
     const config = getNetwork(id);
     if (!isNetworkReady(config)) return;
-    setNetworkIdState(id);
-    localStorage.setItem(STORAGE_KEY, id);
+    // Update URL query param and reload to clear all cached state
+    const url = new URL(window.location.href);
+    url.searchParams.set("network", id);
+    window.location.href = url.toString();
   };
 
   const network = getNetwork(networkId);

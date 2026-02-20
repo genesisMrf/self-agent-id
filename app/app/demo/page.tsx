@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useCallback, useRef, useEffect } from "react";
+import { useReducer, useCallback, useRef, useEffect, useMemo } from "react";
 import { ethers } from "ethers";
 import MatrixText from "@/components/MatrixText";
 import {
@@ -14,6 +14,8 @@ import {
   Rocket,
   Skull,
   Terminal,
+  Bot,
+  Send,
 } from "lucide-react";
 import { SelfAgent } from "@selfxyz/agent-sdk";
 import TestCard, { StepEntry } from "@/components/TestCard";
@@ -66,6 +68,11 @@ interface LogEntry {
   message: string;
 }
 
+interface ChatMessage {
+  role: "user" | "agent";
+  content: string;
+}
+
 interface DemoState {
   phase: "setup" | "testing" | "results";
   privateKey: string;
@@ -75,6 +82,11 @@ interface DemoState {
   agent: AgentSetup | null;
   tests: Record<string, TestState>;
   logs: LogEntry[];
+  chatMessages: ChatMessage[];
+  chatInput: string;
+  chatLoading: boolean;
+  chatOpen: boolean;
+  chatUnlocked: boolean;
 }
 
 type Action =
@@ -86,6 +98,11 @@ type Action =
   | { type: "START_TESTS" }
   | { type: "UPDATE_TEST"; testId: string; state: Partial<TestState> }
   | { type: "ADD_LOG"; testId: string; message: string }
+  | { type: "SET_CHAT_INPUT"; value: string }
+  | { type: "ADD_CHAT_MESSAGE"; message: ChatMessage }
+  | { type: "CHAT_LOADING"; loading: boolean }
+  | { type: "TOGGLE_CHAT" }
+  | { type: "UNLOCK_CHAT" }
   | { type: "RESET" };
 
 // ---------------------------------------------------------------------------
@@ -109,6 +126,11 @@ const initialState: DemoState = {
     gate: makeEmptyTest(),
   },
   logs: [],
+  chatMessages: [],
+  chatInput: "",
+  chatLoading: false,
+  chatOpen: false,
+  chatUnlocked: false,
 };
 
 function reducer(state: DemoState, action: Action): DemoState {
@@ -132,14 +154,18 @@ function reducer(state: DemoState, action: Action): DemoState {
           gate: { ...makeEmptyTest(), status: "running" },
         },
       };
-    case "UPDATE_TEST":
+    case "UPDATE_TEST": {
+      const updated = { ...state.tests[action.testId], ...action.state };
+      const newTests = { ...state.tests, [action.testId]: updated };
+      // Unlock chat when any test succeeds (agent proved human-backed)
+      const justUnlocked = !state.chatUnlocked && updated.status === "success";
       return {
         ...state,
-        tests: {
-          ...state.tests,
-          [action.testId]: { ...state.tests[action.testId], ...action.state },
-        },
+        tests: newTests,
+        chatUnlocked: state.chatUnlocked || updated.status === "success",
+        chatOpen: justUnlocked ? true : state.chatOpen,
       };
+    }
     case "ADD_LOG":
       return {
         ...state,
@@ -148,6 +174,16 @@ function reducer(state: DemoState, action: Action): DemoState {
           { timestamp: Date.now(), testId: action.testId, message: action.message },
         ],
       };
+    case "SET_CHAT_INPUT":
+      return { ...state, chatInput: action.value };
+    case "ADD_CHAT_MESSAGE":
+      return { ...state, chatMessages: [...state.chatMessages, action.message] };
+    case "CHAT_LOADING":
+      return { ...state, chatLoading: action.loading };
+    case "TOGGLE_CHAT":
+      return { ...state, chatOpen: !state.chatOpen };
+    case "UNLOCK_CHAT":
+      return { ...state, chatUnlocked: true };
     case "RESET":
       return initialState;
     default:
@@ -212,6 +248,7 @@ const TEST_LABELS: Record<string, string> = {
   service: "Agent-to-Service",
   peer: "Agent-to-Agent",
   gate: "Agent-to-Chain",
+  chat: "AI Chat",
 };
 
 const LOG_COLORS: Record<string, string> = {
@@ -219,7 +256,148 @@ const LOG_COLORS: Record<string, string> = {
   service: "text-blue-400",
   peer: "text-purple-400",
   gate: "text-green-400",
+  chat: "text-cyan-400",
 };
+
+// ---------------------------------------------------------------------------
+// Chat Section Component
+// ---------------------------------------------------------------------------
+
+const CHAT_SUGGESTIONS = [
+  "Who am I?",
+  "What are you?",
+  "meow?",
+];
+
+function ChatSection({
+  messages,
+  input,
+  loading,
+  unlocked,
+  isOpen,
+  dispatch,
+  onSend,
+}: {
+  messages: ChatMessage[];
+  input: string;
+  loading: boolean;
+  unlocked: boolean;
+  isOpen: boolean;
+  dispatch: React.Dispatch<Action>;
+  onSend: (query: string) => void;
+}) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = input.trim();
+    if (!q || loading) return;
+    onSend(q);
+  };
+
+  return (
+    <Card className="mt-6">
+      {/* Collapsible header */}
+      <button
+        type="button"
+        onClick={() => dispatch({ type: "TOGGLE_CHAT" })}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <Bot size={20} className={unlocked ? "text-cyan-400" : "text-muted"} />
+        <h3 className="font-semibold">AI Agent Chat</h3>
+        {unlocked && (
+          <Badge variant="success" className="ml-1">verified</Badge>
+        )}
+        <span className="text-xs text-muted ml-auto">
+          {isOpen ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {/* Collapsible body */}
+      {isOpen && (
+        <div className="mt-4">
+          {/* Message list */}
+          <div className="bg-[#0d1117] border border-border rounded-lg p-3 min-h-[200px] max-h-[400px] overflow-y-auto mb-3 space-y-3">
+            {messages.length === 0 && !loading && (
+              <div className="flex flex-col items-center justify-center h-[180px] text-muted text-sm space-y-3">
+                <Bot size={32} className="opacity-30" />
+                <p className="text-muted">Try talking to the AI agent</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {CHAT_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => onSend(s)}
+                      className="px-3 py-1.5 text-xs border border-border rounded-full
+                                 hover:border-cyan-400/50 hover:text-cyan-400 transition-colors"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                    msg.role === "user"
+                      ? "bg-accent/20 text-foreground"
+                      : "bg-surface-2 text-foreground"
+                  }`}
+                >
+                  {msg.role === "agent" && (
+                    <span className="text-cyan-400 text-xs font-medium block mb-1">Agent</span>
+                  )}
+                  <span className="whitespace-pre-wrap">{msg.content}</span>
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-surface-2 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-cyan-400" />
+                  <span className="text-muted">Thinking...</span>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => dispatch({ type: "SET_CHAT_INPUT", value: e.target.value })}
+              placeholder="Ask the AI agent..."
+              disabled={loading}
+              className="flex-1 px-4 py-2.5 bg-surface-2 border border-border rounded-lg
+                         focus:border-cyan-400 focus:ring-0 text-sm
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <Button
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="px-4"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            </Button>
+          </form>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Console Log Component
@@ -568,7 +746,7 @@ async function runPeerTest(
   try {
     log(id, `Starting Agent-to-Agent test...`);
     log(id, `Agent: ${agentLabel}`);
-    log(id, "Constructing POST to demo agent GCF");
+    log(id, "Constructing POST to demo agent");
     log(id, "Signing request body with secp256k1...");
     dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 0, t) } });
     await new Promise((r) => setTimeout(r, 0));
@@ -865,7 +1043,14 @@ export default function DemoPage() {
   const { network } = useNetwork();
   const agentRef = useRef<SelfAgent | null>(null);
   const privateKeyRef = useRef<string>("");
-  const autoLoadedRef = useRef(false);
+  const chatUnlockedRef = useRef(false);
+
+  // Unique session ID — regenerated on every page load so the AI treats
+  // each visit as a fresh encounter with no memory of prior sessions.
+  const sessionId = useMemo(() => crypto.randomUUID(), []);
+
+  // Keep ref in sync so the chat callback can read current unlock state
+  chatUnlockedRef.current = state.chatUnlocked;
 
   const log = useCallback(
     (testId: string, message: string) => {
@@ -1002,32 +1187,11 @@ export default function DemoPage() {
     }
   }, [state.privateKey, network]);
 
-  // Auto-fill from sessionStorage ONLY when coming from the register page's "Try Demo" button.
-  // The register page sets both "demo-agent-key" and "demo-agent-from-register".
-  // We only read the key if the flag is present, then clear both immediately.
-  const pendingAutoLoad = useRef<string | null>(null);
-
+  // Clean up any stale sessionStorage from previous register→demo flow
   useEffect(() => {
-    if (autoLoadedRef.current) return;
-    const fromRegister = sessionStorage.getItem("demo-agent-from-register");
-    const stored = sessionStorage.getItem("demo-agent-key");
-    // Always clean up both keys regardless
     sessionStorage.removeItem("demo-agent-key");
     sessionStorage.removeItem("demo-agent-from-register");
-    if (fromRegister && stored) {
-      autoLoadedRef.current = true;
-      pendingAutoLoad.current = stored;
-      dispatch({ type: "SET_KEY", key: stored });
-    }
   }, []);
-
-  // Trigger auto-load once key is in state
-  useEffect(() => {
-    if (pendingAutoLoad.current && state.privateKey === pendingAutoLoad.current && !state.loading && !state.agent) {
-      pendingAutoLoad.current = null;
-      handleLoadAgent();
-    }
-  }, [state.privateKey, state.loading, state.agent, handleLoadAgent]);
 
   // ---- Tests ----
 
@@ -1087,6 +1251,76 @@ export default function DemoPage() {
       runGateTest(fakeAgent, fakeWallet.privateKey, fakeLabel, dispatch, log, network),
     ]);
   }, [log, network]);
+
+  // ---- Chat ----
+
+  const sendChatMessage = useCallback(
+    async (query: string) => {
+      dispatch({ type: "SET_CHAT_INPUT", value: "" });
+      dispatch({ type: "ADD_CHAT_MESSAGE", message: { role: "user", content: query } });
+      dispatch({ type: "CHAT_LOADING", loading: true });
+      log("chat", `User: ${query}`);
+
+      try {
+        const chatUrl = window.location.origin + `/api/demo/chat?network=${network.id}`;
+        const agent = agentRef.current;
+        const unlocked = chatUnlockedRef.current;
+        let res: Response;
+
+        log("chat", `chatUnlocked=${unlocked}, agentLoaded=${!!agent}`);
+
+        if (agent && unlocked) {
+          // Tests passed — send signed request with agent identity
+          log("chat", `Sending SIGNED request (agent ${shortAddr(agent.address)})...`);
+          res = await agent.fetch(chatUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query, session_id: sessionId }),
+          });
+        } else {
+          // Tests NOT passed or no agent — send anonymous (LangChain will hard-refuse)
+          if (agent && !unlocked) {
+            log("chat", "Agent loaded but tests not passed yet — sending as ANONYMOUS");
+          } else {
+            log("chat", "No agent loaded — sending as ANONYMOUS");
+          }
+          res = await fetch(chatUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query, session_id: sessionId }),
+          });
+        }
+
+        const data = await res.json();
+        log("chat", `Response: HTTP ${res.status}, verified=${data.verified ?? "n/a"}, agent=${data.agent ?? "n/a"}`);
+
+        if (!res.ok) {
+          const errMsg = data.error || `HTTP ${res.status}`;
+          log("chat", `Error: ${errMsg}`);
+          dispatch({
+            type: "ADD_CHAT_MESSAGE",
+            message: { role: "agent", content: `Error: ${errMsg}` },
+          });
+        } else {
+          log("chat", `Agent: ${data.response?.slice(0, 100)}${data.response?.length > 100 ? "..." : ""}`);
+          dispatch({
+            type: "ADD_CHAT_MESSAGE",
+            message: { role: "agent", content: data.response },
+          });
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Request failed";
+        log("chat", `Error: ${errMsg}`);
+        dispatch({
+          type: "ADD_CHAT_MESSAGE",
+          message: { role: "agent", content: `Error: ${errMsg}` },
+        });
+      } finally {
+        dispatch({ type: "CHAT_LOADING", loading: false });
+      }
+    },
+    [log, network, sessionId],
+  );
 
   // ---- Render ----
 
@@ -1232,16 +1466,16 @@ export default function DemoPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {TESTS.map((test) => (
+        {TESTS.filter((t) => t.id !== "chat").map((test) => (
           <TestCard
             key={test.id}
             title={test.title}
-            icon={testIcons[test.id]}
+            icon={testIcons[test.id as keyof typeof testIcons]}
             description={test.description}
-            steps={state.tests[test.id].steps}
-            status={state.tests[test.id].status}
-            result={state.tests[test.id].result}
-            error={state.tests[test.id].error}
+            steps={state.tests[test.id]?.steps ?? []}
+            status={state.tests[test.id]?.status ?? "idle"}
+            result={state.tests[test.id]?.result ?? null}
+            error={state.tests[test.id]?.error ?? null}
             codeSnippet={
               test.id === "service"
                 ? getServiceCode(network)
@@ -1256,6 +1490,17 @@ export default function DemoPage() {
 
       {/* Live Console Log */}
       <ConsoleLog logs={state.logs} />
+
+      {/* AI Agent Chat — below console, unlocked after tests pass */}
+      <ChatSection
+        messages={state.chatMessages}
+        input={state.chatInput}
+        loading={state.chatLoading}
+        unlocked={state.chatUnlocked}
+        isOpen={state.chatOpen}
+        dispatch={dispatch}
+        onSend={sendChatMessage}
+      />
     </main>
   );
 }

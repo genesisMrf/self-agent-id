@@ -1,5 +1,6 @@
-selfxyz-agent-sdk>=0.1.0
-fastapi>=0.100
-uvicorn>=0.20
-langchain>=0.2
-langchain-openai>=0.1
+fastapi>=0.115,<1.0
+uvicorn>=0.34,<1.0
+langchain>=0.3,<1.0
+langchain-openai>=0.3,<1.0
+httpx>=0.28,<1.0
+web3>=7.0,<8.0

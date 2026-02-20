@@ -161,14 +161,27 @@ export default function RegisterPage() {
     newWallet: ethers.Wallet | ethers.HDNodeWallet,
     humanIdentifier: string
   ) => {
+    // Must match the deployed contract's _verifyAgentSignature:
+    // keccak256(abi.encodePacked("self-agent-id:register:", humanAddress))
+    // NOTE: The source code now includes chainId + registryAddress but the
+    // currently deployed V4 bytecode does NOT (chain-binds commit is newer
+    // than the deployment). Update this after redeployment.
     const messageHash = ethers.keccak256(
       ethers.solidityPacked(
-        ["string", "address", "uint256", "address"],
-        ["self-agent-id:register:", humanIdentifier, network.chainId, network.registryAddress]
+        ["string", "address"],
+        ["self-agent-id:register:", humanIdentifier]
       )
     );
+
+    console.log("[signAgentChallenge] humanIdentifier:", humanIdentifier);
+    console.log("[signAgentChallenge] messageHash:", messageHash);
+
     const signature = await newWallet.signMessage(ethers.getBytes(messageHash));
-    return ethers.Signature.from(signature);
+    const sig = ethers.Signature.from(signature);
+
+    console.log("[signAgentChallenge] v:", sig.v, "r:", sig.r, "s:", sig.s);
+
+    return sig;
   };
 
   const handleConnect = async () => {
@@ -229,12 +242,26 @@ export default function RegisterPage() {
     const newWallet = ethers.Wallet.createRandom();
     setAgentWallet(newWallet as ethers.HDNodeWallet);
 
-    // For wallet-free, userId is the agent's address (the human has no wallet)
-    const agentAddress = newWallet.address.toLowerCase();
+    // Use checksummed address for userId to ensure ethers.solidityPacked
+    // treats it as a proper address (ethers v6 normalizes, but be explicit)
+    const agentAddress = ethers.getAddress(newWallet.address);
 
-    // Sign challenge with agentAddress as the "humanIdentifier"
-    // The contract uses humanAddress from output.userIdentifier (which will be agentAddress)
+    // Sign challenge: the contract will derive humanAddress from output.userIdentifier,
+    // which comes from the userId field. Both must use the same address.
     const sig = await signAgentChallenge(newWallet, agentAddress);
+
+    // Self-verify: recover signer to confirm the signature is valid
+    const verifyHash = ethers.keccak256(
+      ethers.solidityPacked(
+        ["string", "address"],
+        ["self-agent-id:register:", agentAddress]
+      )
+    );
+    const ethSignedHash = ethers.hashMessage(ethers.getBytes(verifyHash));
+    const recovered = ethers.recoverAddress(ethSignedHash, sig);
+    console.log("[walletFree] self-verify recovered:", recovered);
+    console.log("[walletFree] agentAddress:", agentAddress);
+    console.log("[walletFree] signature valid:", recovered.toLowerCase() === agentAddress.toLowerCase());
 
     // Build "W" + config(1) + agentAddr(40) + guardian(40) + r(64) + s(64) + v(2) = 212 chars
     const cfgIdx = getConfigIndex(disclosures);
@@ -245,7 +272,14 @@ export default function RegisterPage() {
     const vHex = sig.v.toString(16).padStart(2, "0");
     const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
 
-    setSelfApp(buildSelfApp(agentAddress, userDefinedData));
+    console.log("[walletFree] agentAddress (userId):", agentAddress);
+    console.log("[walletFree] agentAddrHex in userData:", agentAddrHex);
+    console.log("[walletFree] userDefinedData:", userDefinedData);
+    console.log("[walletFree] userDefinedData.length:", userDefinedData.length);
+    console.log("[walletFree] r:", sig.r, "s:", sig.s, "v:", sig.v);
+
+    // Pass lowercase address with 0x to buildSelfApp (SDK strips 0x for userId)
+    setSelfApp(buildSelfApp(agentAddress.toLowerCase(), userDefinedData));
     setStep("scan");
   };
 
@@ -269,8 +303,8 @@ export default function RegisterPage() {
       const newWallet = ethers.Wallet.createRandom();
       setAgentWallet(newWallet as ethers.HDNodeWallet);
 
-      // 3. Agent signs challenge
-      const agentAddress = newWallet.address.toLowerCase();
+      // 3. Agent signs challenge (use checksummed address for solidityPacked consistency)
+      const agentAddress = ethers.getAddress(newWallet.address);
       const sig = await signAgentChallenge(newWallet, agentAddress);
 
       // 4. Build userDefinedData: "W" + config(1) + agentAddr(40) + smartWalletAddr(40) + r(64) + s(64) + v(2)
@@ -282,6 +316,11 @@ export default function RegisterPage() {
       const vHex = sig.v.toString(16).padStart(2, "0");
       const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
 
+      console.log("[smartWallet] agentAddress (userId):", agentAddress);
+      console.log("[smartWallet] smartWalletAddress (guardian):", swAddress);
+      console.log("[smartWallet] userDefinedData:", userDefinedData);
+      console.log("[smartWallet] userDefinedData.length:", userDefinedData.length);
+
       // 5. Save passkey for later sign-in
       savePasskey({
         credentialId,
@@ -289,7 +328,7 @@ export default function RegisterPage() {
         createdAt: Date.now(),
       });
 
-      setSelfApp(buildSelfApp(agentAddress, userDefinedData));
+      setSelfApp(buildSelfApp(agentAddress.toLowerCase(), userDefinedData));
       setStep("scan");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -313,7 +352,11 @@ export default function RegisterPage() {
     } else {
       msg = String(error);
     }
-    console.error("Self verification error:", error);
+    console.error("[handleError] Self verification error:", error);
+    console.error("[handleError] Current mode:", mode);
+    console.error("[handleError] Agent wallet address:", agentWallet?.address);
+    console.error("[handleError] Wallet address:", walletAddress);
+    console.error("[handleError] Self app config:", selfApp);
     if (msg.includes("AlreadyRegistered") || msg.includes("already")) {
       setErrorMessage("This agent is already registered.");
     } else {
@@ -1154,15 +1197,6 @@ export default function RegisterPage() {
             </Button>
             <Button
               onClick={() => {
-                // Pass the agent private key to demo page via sessionStorage
-                // Demo page only reads if "demo-agent-from-register" flag is also set
-                const pk = mode === "simple"
-                  ? undefined  // simple mode uses wallet, no separate agent key
-                  : agentWallet?.privateKey;
-                if (pk) {
-                  sessionStorage.setItem("demo-agent-key", pk);
-                  sessionStorage.setItem("demo-agent-from-register", "1");
-                }
                 router.push("/demo");
               }}
               variant="secondary"

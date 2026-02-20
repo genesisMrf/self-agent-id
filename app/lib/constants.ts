@@ -1,9 +1,3 @@
-// ── Legacy exports (kept for API route server-side usage) ─────────────
-// Client components should use useNetwork() from NetworkContext instead.
-
-export const REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_SELF_ENDPOINT!;
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://forno.celo-sepolia.celo-testnet.org";
-
 // Minimal ABI for reading SelfAgentRegistry state
 export const REGISTRY_ABI = [
   "function isVerifiedAgent(bytes32 agentPubKey) view returns (bool)",

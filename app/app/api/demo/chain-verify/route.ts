@@ -185,7 +185,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: reason }, { status: 400 });
   }
 
-  // 8. Submit real transaction
+  // 8. Submit real transaction (with timeout for Vercel serverless)
+  let txHash = "";
   try {
     const tx = await contract.metaVerifyAgent(
       agentKey,
@@ -193,7 +194,15 @@ export async function POST(req: NextRequest) {
       deadline,
       eip712Signature,
     );
-    const receipt = await tx.wait();
+    txHash = tx.hash;
+
+    // Wait for confirmation with 8s timeout (Vercel serverless has 10s limit)
+    const receipt = await Promise.race([
+      tx.wait(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("TIMEOUT")), 8_000),
+      ),
+    ]);
 
     // Read counters after tx
     const [verCount, totalCount] = await Promise.all([
@@ -219,6 +228,17 @@ export async function POST(req: NextRequest) {
       rateLimitRemaining: rateLimitResult.remaining,
     });
   } catch (txErr) {
+    if (txErr instanceof Error && txErr.message === "TIMEOUT") {
+      // Tx submitted but confirmation timed out — return hash for explorer link
+      return NextResponse.json({
+        txHash,
+        pending: true,
+        explorerUrl: `${network.blockExplorer}/tx/${txHash}`,
+        agentAddress: result.agentAddress,
+        agentId: result.agentId.toString(),
+        rateLimitRemaining: rateLimitResult.remaining,
+      });
+    }
     let reason = "Transaction failed";
     if (txErr instanceof Error) {
       reason = txErr.message.slice(0, 200);

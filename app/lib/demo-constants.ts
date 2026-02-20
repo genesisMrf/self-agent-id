@@ -4,10 +4,6 @@ import { ethers } from "ethers";
 export const DEMO_AGENT_ADDRESS = "0xcfCACe4011fF8567cf2ED355116b2A7Dc2dEAbbA";
 export const DEMO_AGENT_KEY = ethers.zeroPadValue(DEMO_AGENT_ADDRESS, 32);
 
-// Cloud Run / Cloud Function URLs — legacy env vars (testnet)
-export const DEMO_SERVICE_URL = process.env.NEXT_PUBLIC_DEMO_SERVICE_URL || "";
-export const DEMO_AGENT_URL = process.env.NEXT_PUBLIC_DEMO_AGENT_URL || "";
-
 export const TESTS = [
   {
     id: "service" as const,

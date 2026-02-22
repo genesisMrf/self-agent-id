@@ -421,7 +421,7 @@ export class SelfAgentVerifier {
   /**
    * Express/Connect middleware that verifies agent requests.
    *
-   * Adds `req.agent` with `{ address, agentKey, agentId }` on success.
+   * Adds `req.agent` with `{ address, agentKey, agentId, agentCount, nullifier, credentials? }` on success.
    * Returns 401 on failure.
    *
    * Usage:
@@ -466,6 +466,9 @@ export class SelfAgentVerifier {
         address: result.agentAddress,
         agentKey: result.agentKey,
         agentId: result.agentId,
+        agentCount: result.agentCount,
+        nullifier: result.nullifier,
+        credentials: result.credentials,
       };
       next();
     };

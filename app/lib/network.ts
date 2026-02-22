@@ -19,7 +19,6 @@ export interface NetworkConfig {
   demoServiceUrl: string;
   demoAgentUrl: string;
   demoAgentAddress?: string;
-  registrationChallengeMode: "legacy-human-only" | "chain-and-contract";
   nativeCurrency: { name: string; symbol: string; decimals: number };
 }
 
@@ -43,7 +42,6 @@ const CELO_MAINNET: NetworkConfig = {
   demoServiceUrl: "",
   demoAgentUrl: "",
   demoAgentAddress: process.env.NEXT_PUBLIC_DEMO_AGENT_ADDRESS_CELO || undefined,
-  registrationChallengeMode: "legacy-human-only",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
 };
 
@@ -66,7 +64,6 @@ const CELO_SEPOLIA: NetworkConfig = {
   demoServiceUrl: "",
   demoAgentUrl: "",
   demoAgentAddress: process.env.NEXT_PUBLIC_DEMO_AGENT_ADDRESS_CELO_SEPOLIA || undefined,
-  registrationChallengeMode: "legacy-human-only",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
 };
 

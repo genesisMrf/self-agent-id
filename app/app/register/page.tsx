@@ -36,6 +36,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { isPasskeySupported, createPasskeyWallet } from "@/lib/aa";
 import { savePasskey } from "@/lib/passkey-storage";
+import { saveAgentPrivateKey } from "@/lib/agentKeyVault";
 
 // Dynamic import to avoid SSR issues with Self QR SDK
 const SelfQRcodeWrapper = dynamic(
@@ -173,36 +174,21 @@ export default function RegisterPage() {
     newWallet: ethers.Wallet | ethers.HDNodeWallet,
     humanIdentifier: string
   ) => {
-    // Network config controls challenge domain so this app can support:
-    // - legacy deployments: keccak256("self-agent-id:register:", humanAddress)
-    // - chain-bound deployments: + chainId + registryAddress
-    const messageHash = network.registrationChallengeMode === "chain-and-contract"
-      ? ethers.keccak256(
-          ethers.solidityPacked(
-            ["string", "address", "uint256", "address"],
-            [
-              "self-agent-id:register:",
-              humanIdentifier,
-              BigInt(network.chainId),
-              network.registryAddress,
-            ],
-          ),
-        )
-      : ethers.keccak256(
-          ethers.solidityPacked(
-            ["string", "address"],
-            ["self-agent-id:register:", humanIdentifier],
-          ),
-        );
-
-    console.log("[signAgentChallenge] humanIdentifier:", humanIdentifier);
-    console.log("[signAgentChallenge] mode:", network.registrationChallengeMode);
-    console.log("[signAgentChallenge] messageHash:", messageHash);
+    // Single challenge format: bind signature to chain + registry contract.
+    const messageHash = ethers.keccak256(
+      ethers.solidityPacked(
+        ["string", "address", "uint256", "address"],
+        [
+          "self-agent-id:register:",
+          humanIdentifier,
+          BigInt(network.chainId),
+          network.registryAddress,
+        ],
+      ),
+    );
 
     const signature = await newWallet.signMessage(ethers.getBytes(messageHash));
     const sig = ethers.Signature.from(signature);
-
-    console.log("[signAgentChallenge] v:", sig.v, "r:", sig.r, "s:", sig.s);
 
     return sig;
   };
@@ -273,19 +259,6 @@ export default function RegisterPage() {
     // which comes from the userId field. Both must use the same address.
     const sig = await signAgentChallenge(newWallet, agentAddress);
 
-    // Self-verify: recover signer to confirm the signature is valid
-    const verifyHash = ethers.keccak256(
-      ethers.solidityPacked(
-        ["string", "address"],
-        ["self-agent-id:register:", agentAddress]
-      )
-    );
-    const ethSignedHash = ethers.hashMessage(ethers.getBytes(verifyHash));
-    const recovered = ethers.recoverAddress(ethSignedHash, sig);
-    console.log("[walletFree] self-verify recovered:", recovered);
-    console.log("[walletFree] agentAddress:", agentAddress);
-    console.log("[walletFree] signature valid:", recovered.toLowerCase() === agentAddress.toLowerCase());
-
     // Build "W" + config(1) + agentAddr(40) + guardian(40) + r(64) + s(64) + v(2) = 212 chars
     const cfgIdx = getConfigIndex(disclosures);
     const agentAddrHex = newWallet.address.slice(2).toLowerCase();
@@ -294,12 +267,6 @@ export default function RegisterPage() {
     const sHex = sig.s.slice(2);
     const vHex = sig.v.toString(16).padStart(2, "0");
     const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
-
-    console.log("[walletFree] agentAddress (userId):", agentAddress);
-    console.log("[walletFree] agentAddrHex in userData:", agentAddrHex);
-    console.log("[walletFree] userDefinedData:", userDefinedData);
-    console.log("[walletFree] userDefinedData.length:", userDefinedData.length);
-    console.log("[walletFree] r:", sig.r, "s:", sig.s, "v:", sig.v);
 
     // Pass lowercase address with 0x to buildSelfApp (SDK strips 0x for userId)
     setSelfApp(buildSelfApp(agentAddress.toLowerCase(), userDefinedData));
@@ -325,6 +292,11 @@ export default function RegisterPage() {
       // 2. Generate agent keypair
       const newWallet = ethers.Wallet.createRandom();
       setAgentWallet(newWallet as ethers.HDNodeWallet);
+      saveAgentPrivateKey({
+        agentAddress: newWallet.address,
+        privateKey: newWallet.privateKey,
+        guardianAddress: swAddress,
+      });
 
       // 3. Agent signs challenge (use checksummed address for solidityPacked consistency)
       const agentAddress = ethers.getAddress(newWallet.address);
@@ -338,11 +310,6 @@ export default function RegisterPage() {
       const sHex = sig.s.slice(2);
       const vHex = sig.v.toString(16).padStart(2, "0");
       const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
-
-      console.log("[smartWallet] agentAddress (userId):", agentAddress);
-      console.log("[smartWallet] smartWalletAddress (guardian):", swAddress);
-      console.log("[smartWallet] userDefinedData:", userDefinedData);
-      console.log("[smartWallet] userDefinedData.length:", userDefinedData.length);
 
       // 5. Save passkey for later sign-in
       savePasskey({
@@ -374,11 +341,13 @@ export default function RegisterPage() {
       setAgentIdResult(agentId.toString());
 
       // Read provider strength
+      let resolvedVerificationStrength: number | null = null;
       const providerAddr: string = await registry.agentProofProvider(agentId);
       if (providerAddr && providerAddr !== ethers.ZeroAddress) {
         const prov = new ethers.Contract(providerAddr, PROVIDER_ABI, provider);
         const strength: number = await prov.verificationStrength();
-        setVerificationStrength(Number(strength));
+        resolvedVerificationStrength = Number(strength);
+        setVerificationStrength(resolvedVerificationStrength);
       }
 
       // Read credentials for card
@@ -396,7 +365,7 @@ export default function RegisterPage() {
           chainId: network.chainId,
           proofProvider: providerAddr,
           providerName: providerAddr !== ethers.ZeroAddress ? "self" : "unknown",
-          verificationStrength: verificationStrength ?? 100,
+          verificationStrength: resolvedVerificationStrength ?? 100,
           trustModel: {
             proofType: "passport",
             sybilResistant: true,
@@ -478,7 +447,7 @@ export default function RegisterPage() {
       {step === "mode" && (
         <div className="flex flex-col items-center gap-6 w-full">
           <p className="text-muted text-center max-w-md">
-            Choose how your agent&apos;s on-chain identity will be created.
+            Choose how you want to register on-chain: wallet identity for direct human use, or a dedicated agent identity for autonomous software.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
@@ -519,7 +488,7 @@ export default function RegisterPage() {
                 <span className="font-bold text-sm">Verified Wallet</span>
               </div>
               <p className="text-xs text-muted mt-2">
-                Your wallet address = agent identity. For on-chain gating.
+                Your wallet address is the verified identity. Best for human-operated, on-chain actions.
               </p>
             </button>
 
@@ -562,7 +531,7 @@ export default function RegisterPage() {
               </div>
               <p className="text-xs text-muted mt-2">
                 {passkeySupported
-                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless."
+                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless on Celo mainnet."
                   : "Passkeys not supported in this browser."}
               </p>
             </button>
@@ -599,7 +568,7 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   Best for <strong className="text-foreground">on-chain gating</strong> where you transact directly
-                  (DAOs, token access). Not for autonomous agents.
+                  (DAOs, token access). For autonomous agents, choose Agent Identity.
                 </li>
               </ul>
             ) : mode === "advanced" ? (
@@ -610,11 +579,11 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   A fresh <strong className="text-foreground">agent keypair</strong> is generated in your browser.
-                  The agent signs a challenge to prove key ownership.
+                  Your browser signs a challenge with that key to prove key ownership during registration.
                 </li>
                 <li>
                   Scan your passport with the <strong className="text-foreground">Self app</strong> &mdash;
-                  the contract verifies both the ZK proof and the agent&apos;s signature in one step.
+                  the contract verifies both the ZK proof and the registration signature in one step.
                 </li>
                 <li>
                   Your agent operates with <strong className="text-foreground">its own key</strong> &mdash;
@@ -629,15 +598,24 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   A fresh <strong className="text-foreground">agent keypair</strong> is also generated.
-                  The agent signs requests with its own ECDSA key.
+                  That key is used later by your agent software to sign API requests.
                 </li>
                 <li>
                   The smart wallet becomes the <strong className="text-foreground">guardian</strong> &mdash;
                   you can revoke your agent anytime with your biometrics, gaslessly.
                 </li>
                 <li>
-                  The smart wallet <strong className="text-foreground">deploys on first use</strong> (counterfactual).
-                  All management transactions are sponsored &mdash; no gas needed.
+                  Powered by <strong className="text-foreground">ZeroDev Kernel accounts</strong> with
+                  passkey auth and <strong className="text-foreground">Pimlico</strong> sponsored ops on Celo mainnet.
+                  The smart wallet deploys on first use (counterfactual) &mdash; see{" "}
+                  <a
+                    href="https://docs.zerodev.app/sdk/advanced/counterfactual-address"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:text-accent-2 underline"
+                  >
+                    counterfactual address docs
+                  </a>.
                 </li>
               </ul>
             ) : (
@@ -969,7 +947,7 @@ export default function RegisterPage() {
           {mode === "smartwallet" && smartWalletAddress && network.isTestnet && (
             <div className="bg-accent/5 border border-accent/20 rounded-lg px-4 py-3 text-xs text-muted w-full max-w-md">
               <strong className="text-foreground">Testnet:</strong> On {network.label}, the smart wallet is computed
-              but not deployed. Gasless passkey operations are available on Celo Mainnet.
+              but not deployed. Gasless passkey operations are available on Celo Mainnet (Pimlico + ZeroDev).
             </div>
           )}
           {selfApp ? (
@@ -1040,7 +1018,7 @@ export default function RegisterPage() {
                 {cardStep === "pending" ? "Step 2/2: Preparing Agent Card..." :
                  cardStep === "writing" ? "Step 2/2: Setting Agent Card (confirm in wallet)..." :
                  cardStep === "done" ? "Step 2/2: Agent Card Set" :
-                 "Step 2/2: Agent Card skipped — you can set it later from My Agents"}
+                 "Step 2/2: Agent Card skipped — you can set it later via SDK or updateAgentMetadata()"}
               </span>
             </div>
           </Card>
@@ -1172,8 +1150,10 @@ export default function RegisterPage() {
                 </div>
                 <p className="text-sm text-muted mb-3">
                   A fresh Ethereum keypair was generated in your browser for your agent.
-                  Copy these credentials now &mdash; the private key cannot be recovered
-                  after you leave this page.
+                  Copy these credentials now &mdash; this is the only place we display the private key.
+                  {mode === "smartwallet"
+                    ? " For demo convenience, this browser keeps a local copy linked to your passkey wallet."
+                    : " If you leave without saving it, it cannot be recovered."}
                 </p>
 
                 <div className="space-y-3">

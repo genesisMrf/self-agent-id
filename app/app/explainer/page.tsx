@@ -292,6 +292,10 @@ export default function ExplainerPage() {
             <p className="text-sm text-muted">
               {snippets[activeUseCase].description}
             </p>
+            <p className="text-xs text-muted">
+              Security default: <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">requireSelfProvider: true</code>.
+              Turning this off accepts any approved proof provider, not only Self.
+            </p>
             <p className="text-xs text-subtle font-mono">
               {snippets[activeUseCase].flow}
             </p>
@@ -648,7 +652,8 @@ export default function ExplainerPage() {
             </p>
             <pre className="bg-surface-2 border border-border rounded-lg p-4 text-xs overflow-auto mb-4">
 {`// Quick check: Only accept passport-verified agents
-const res = await fetch(\`https://selfagentid.xyz/api/reputation/42220/\${agentId}\`);
+const baseUrl = "https://self-agent-id.vercel.app"; // replace with your deployment URL
+const res = await fetch(\`\${baseUrl}/api/reputation/42220/\${agentId}\`);
 const { score, proofType } = await res.json();
 
 if (score < 100) {

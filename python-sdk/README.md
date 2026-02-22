@@ -1,6 +1,6 @@
 # selfxyz-agent-sdk
 
-Python SDK for [Self Agent ID](https://agent-id.self.xyz) — proof-of-human verification for AI agents.
+Python SDK for [Self Agent ID](https://self-agent-id.vercel.app) — proof-of-human verification for AI agents.
 
 Sign requests in Python, verify in TypeScript, or vice versa. The signing protocol is language-agnostic — all SDKs produce identical signatures.
 
@@ -116,12 +116,29 @@ The verifier implements a 6-step security chain:
 
 This SDK is 100% compatible with the TypeScript SDK (`@selfxyz/agent-sdk`). Test vectors generated from TypeScript are verified byte-for-byte in the Python test suite.
 
+## Run Tests
+
+From `python-sdk/`:
+
+```bash
+./scripts/test.sh
+```
+
+Manual setup (equivalent):
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e ".[test]"
+pytest -q
+```
+
 ## Networks
 
 | Network | Registry | Chain ID |
 |---------|----------|----------|
 | Mainnet (Celo) | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` | 42220 |
-| Testnet (Celo Sepolia) | `0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b` | 44787 |
+| Testnet (Celo Sepolia) | `0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b` | 11142220 |
 
 ## License
 

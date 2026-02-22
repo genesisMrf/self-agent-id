@@ -142,7 +142,7 @@ export default function Home() {
                 },
                 {
                   title: "Agent registered + A2A Card set",
-                  desc: "An NFT is minted binding your agent key to a verified human. An A2A Agent Card with your trust score is auto-generated.",
+                  desc: "An NFT is minted binding your agent key to a verified human. The app then attempts to set an A2A Agent Card; if skipped, you can still set/update it later via SDK or updateAgentMetadata().",
                 },
                 {
                   title: "Agent signs requests via SDK",

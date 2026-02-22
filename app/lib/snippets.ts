@@ -55,14 +55,22 @@ function needsCreds(f: Set<string>): boolean {
 // Service-side builders
 // ============================================================
 
-function buildServiceTS(f: Set<string>): string {
+function buildServiceTS(
+  f: Set<string>,
+  registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+  rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
+): string {
   const creds = needsCreds(f);
   const sybil = f.has("sybil");
+  const regAge = f.has("regAge");
+  const needsEthers = regAge;
 
-  let verifierOpts = "";
-  if (sybil) {
-    verifierOpts = `{\n  maxAgentsPerHuman: 5,\n}`;
-  }
+  const verifierOptsLines: string[] = [];
+  if (sybil) verifierOptsLines.push("maxAgentsPerHuman: 5");
+  if (creds) verifierOptsLines.push("includeCredentials: true");
+  const verifierOpts = verifierOptsLines.length
+    ? `{\n  ${verifierOptsLines.join(",\n  ")},\n}`
+    : "";
 
   const rateLimit = f.has("rateLimit");
 
@@ -79,7 +87,8 @@ function buildServiceTS(f: Set<string>): string {
 
   if (creds) {
     body += `\n\n  // Read ZK-attested credentials
-  const creds = await req.agent.getCredentials();`;
+  const creds = req.agent.credentials;
+  if (!creds) return res.status(403).json({ error: "Credentials missing; enable includeCredentials on verifier" });`;
   }
   if (f.has("age18")) {
     body += `\n  if (creds.olderThan < 18) return res.status(403).json({ error: "Must be 18+" });`;
@@ -88,7 +97,7 @@ function buildServiceTS(f: Set<string>): string {
     body += `\n  if (creds.olderThan < 21) return res.status(403).json({ error: "Must be 21+" });`;
   }
   if (f.has("ofac")) {
-    body += `\n  if (!creds.ofac) return res.status(403).json({ error: "OFAC check failed" });`;
+    body += `\n  if (!creds.ofac?.[0]) return res.status(403).json({ error: "OFAC check failed" });`;
   }
   if (f.has("nationality")) {
     body += `\n  console.log("Nationality:", creds.nationality);`;
@@ -99,16 +108,19 @@ function buildServiceTS(f: Set<string>): string {
   if (f.has("credentials")) {
     body += `\n  console.log("All credentials:", creds);`;
   }
-  if (f.has("regAge")) {
-    body += `\n\n  // Reject agents registered less than 7 days ago
-  if (req.agent.registeredAt > Date.now() - 7 * 24 * 3600 * 1000) {
+  if (regAge) {
+    body += `\n\n  // Reject agents registered less than ~7 days ago (by block age)
+  const registeredAt = await registry.agentRegisteredAt(req.agent.agentId);
+  const currentBlock = await provider.getBlockNumber();
+  const minBlocks = Math.floor((7 * 24 * 60 * 60) / 5); // ~5s blocks
+  if (currentBlock - Number(registeredAt) < minBlocks) {
     return res.status(403).json({ error: "Agent too new" });
   }`;
   }
 
   body += `\n\n  res.json({ ok: true });`;
 
-  const asyncKw = creds ? "async " : "";
+  const asyncKw = creds || regAge ? "async " : "";
 
   let rateLimiterDecl = "";
   if (rateLimit) {
@@ -116,10 +128,24 @@ function buildServiceTS(f: Set<string>): string {
   }
 
   return `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
+${needsEthers ? `import { ethers } from "ethers";` : ""}
 import express from "express";
 
 const app = express();
+// Preserve exact request body bytes for signature verification.
+app.use(express.json({
+  verify: (req: any, _res: any, buf: any) => {
+    req.rawBody = typeof buf === "string" ? buf : buf.toString("utf8");
+  },
+}));
 const verifier = new SelfAgentVerifier(${verifierOpts});${rateLimiterDecl}
+${regAge ? `
+const provider = new ethers.JsonRpcProvider("${rpcUrl}");
+const registry = new ethers.Contract(
+  "${registryAddress}",
+  ["function agentRegisteredAt(uint256) view returns (uint256)"],
+  provider,
+);` : ""}
 
 app.use("/api", verifier.auth());
 
@@ -714,7 +740,7 @@ const REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b";
 const RPC = "https://forno.celo-sepolia.celo-testnet.org";
 const DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app";
 const DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app";
-const DEMO_APP = "https://agent-id.self.xyz"; // chain-verify relayer
+const DEMO_APP = "https://self-agent-id.vercel.app"; // replace with your deployment URL
 const VERIFIER = "0x26e05bF632fb5bACB665ab014240EAC1413dAE35";
 
 const agent = new SelfAgent({
@@ -815,7 +841,7 @@ from self_agent_sdk import SelfAgent, SelfAgentVerifier
 
 DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
 DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
-DEMO_APP = "https://agent-id.self.xyz"
+DEMO_APP = "https://self-agent-id.vercel.app"  # replace with your deployment URL
 
 agent = SelfAgent(
     private_key=os.environ["AGENT_PRIVATE_KEY"],
@@ -996,7 +1022,7 @@ export function getServiceSnippets(
         "Verify that an AI agent calling your API is human-backed. The SDK recovers the signer from the ECDSA signature, checks isVerifiedAgent() on-chain, and optionally reads ZK-attested credentials and enforces sybil limits.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk or cargo add self-agent-sdk) \u2192 Create verifier \u2192 Add middleware \u2192 Done",
       snippets: [
-        { label: "TypeScript", language: "typescript", code: buildServiceTS(f) },
+        { label: "TypeScript", language: "typescript", code: buildServiceTS(f, registryAddress, rpcUrl) },
         { label: "Python", language: "python", code: buildServicePythonSDK(f) },
         { label: "Rust", language: "rust", code: buildServiceRustSDK(f) },
       ],

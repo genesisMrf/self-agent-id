@@ -14,6 +14,10 @@ dependencies = [
     "httpx>=0.25",
 ]
 
+[project.scripts]
+self-agent = "self_agent_sdk.cli:main"
+self-agent-python = "self_agent_sdk.cli:main"
+
 [project.optional-dependencies]
 flask = ["flask>=2.0"]
 fastapi = ["fastapi>=0.100"]

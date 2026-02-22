@@ -242,6 +242,21 @@ export default function Home() {
           </Card>
         </div>
 
+        <Card className="mt-6 border border-accent/30 bg-accent/5">
+          <h3 className="text-sm font-bold mb-2">CLI Registration Available</h3>
+          <p className="text-xs text-muted">
+            If you prefer terminal workflows, use the cross-language CLI (TypeScript, Python, Rust) and open the generated browser handoff URL for Self proof.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <code className="bg-surface-2 font-mono text-accent-2 px-2 py-1 rounded text-xs">
+              self-agent register init --mode agent-identity --human-address 0x...
+            </code>
+            <Link href="/cli" className="text-xs text-accent hover:text-accent-2 underline underline-offset-2">
+              Open CLI Quickstart
+            </Link>
+          </div>
+        </Card>
+
         {/* Verification Flow */}
         <Card className="mt-8">
           <h3 className="text-xs font-bold text-center mb-4 text-muted uppercase tracking-widest">

@@ -252,6 +252,19 @@ export default function ExplainerPage() {
                 pip install selfxyz-agent-sdk
               </code>
             </div>
+            <Card className="border border-accent/30 bg-accent/5">
+              <p className="text-sm text-muted">
+                Prefer terminal onboarding? Use the CLI flow for human-guided registration or backend-orchestrated agent onboarding.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                <code className="bg-surface-2 font-mono text-accent-2 px-2 py-1 rounded text-xs">
+                  self-agent register init --mode agent-identity --human-address 0x...
+                </code>
+                <Link href="/cli" className="text-xs text-accent hover:text-accent-2 underline underline-offset-2">
+                  Open CLI Quickstart
+                </Link>
+              </div>
+            </Card>
 
             <div className="flex gap-2 flex-wrap">
               {snippets.map((uc, i) => (
@@ -313,6 +326,13 @@ export default function ExplainerPage() {
               authenticate your agent with services or submit on-chain transactions.
               Set <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded text-xs">AGENT_PRIVATE_KEY</code> in
               your agent&apos;s environment first.
+            </p>
+            <p className="text-xs text-muted">
+              CLI option: run registration from terminal and hand off browser proof at{" "}
+              <Link href="/cli" className="text-accent hover:text-accent-2 underline underline-offset-2">
+                /cli
+              </Link>
+              .
             </p>
 
             <div className="flex gap-2 flex-wrap">

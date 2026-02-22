@@ -780,9 +780,18 @@ export default function RegisterPage() {
               )}
             </Button>
           ) : (
-            <Button onClick={() => setStep("connect")} variant="primary" size="lg">
-              {mode === "simple" ? "Continue with Verified Wallet" : "Continue with Agent Identity"}
-            </Button>
+            <div className="w-full flex flex-col items-center gap-2">
+              <p className="text-xs text-muted text-center max-w-md">
+                {mode === "simple"
+                  ? "Next step: connect your wallet. That same address will be your verified on-chain identity."
+                  : "Next step: connect your wallet to prove the human. A separate agent keypair is generated in-browser for your agent."}
+              </p>
+              <Button onClick={() => setStep("connect")} variant="primary" size="lg">
+                {mode === "simple"
+                  ? "Continue: Connect Verified Wallet"
+                  : "Continue: Connect Wallet for Agent Identity"}
+              </Button>
+            </div>
           )}
 
           {errorMessage && (

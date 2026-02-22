@@ -5,6 +5,29 @@ export { SelfAgentVerifier } from "./SelfAgentVerifier";
 export type { VerifierConfig, VerificationResult, AgentCredentials } from "./SelfAgentVerifier";
 
 export {
+  getRegistrationConfigIndex,
+  computeRegistrationChallengeHash,
+  signRegistrationChallenge,
+  buildSimpleRegisterUserDataAscii,
+  buildSimpleDeregisterUserDataAscii,
+  buildAdvancedRegisterUserDataAscii,
+  buildAdvancedDeregisterUserDataAscii,
+  buildWalletFreeRegisterUserDataAscii,
+  buildSimpleRegisterUserDataBinary,
+  buildSimpleDeregisterUserDataBinary,
+  buildAdvancedRegisterUserDataBinary,
+  buildAdvancedDeregisterUserDataBinary,
+  buildWalletFreeRegisterUserDataBinary,
+} from "./registration";
+export type {
+  RegistrationMode,
+  RegistrationDisclosures,
+  RegistrationChallengeInput,
+  RegistrationSignatureParts,
+  SignedRegistrationChallenge,
+} from "./registration";
+
+export {
   buildAgentCard,
   getProviderLabel,
   getStrengthColor,

@@ -5,9 +5,14 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
+  "bin": {
+    "self-agent": "dist/cli.js",
+    "self-agent-cli": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js",
+    "cli": "node dist/cli.js"
   },
   "keywords": ["self", "agent", "identity", "proof-of-human", "erc-8004"],
   "author": "Self Protocol",

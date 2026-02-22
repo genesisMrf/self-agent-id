@@ -99,3 +99,9 @@ Current defaults in `app/lib/network.ts`:
 ## Important Note on Smart Wallet Mode
 
 Smart wallet mode manages guardian actions with passkeys, but agents still use their own ECDSA key for API request signing and EIP-712 demo contract flows.
+
+## Integration Docs
+
+1. `docs/SELF_PROTOCOL_INTEGRATION.md`
+2. `docs/CLI_REGISTRATION_SPEC.md`
+3. `docs/CLI_REGISTRATION_GUIDE.md`

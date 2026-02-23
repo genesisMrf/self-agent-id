@@ -177,15 +177,27 @@ export default function RegisterPage() {
     newWallet: ethers.Wallet | ethers.HDNodeWallet,
     humanIdentifier: string
   ) => {
-    // Single challenge format: bind signature to chain + registry contract.
+    // Read per-agent nonce from registry to prevent signature replay attacks.
+    // New agents have nonce = 0; nonce increments on each successful registration.
+    const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+    const registry = new ethers.Contract(
+      network.registryAddress,
+      ["function agentNonces(address) view returns (uint256)"],
+      provider,
+    );
+    const nonce: bigint = await registry.agentNonces(newWallet.address);
+
+    // Challenge format matches _verifyAgentSignature in SelfAgentRegistry:
+    // keccak256("self-agent-id:register:" + humanAddress + chainId + registry + nonce)
     const messageHash = ethers.keccak256(
       ethers.solidityPacked(
-        ["string", "address", "uint256", "address"],
+        ["string", "address", "uint256", "address", "uint256"],
         [
           "self-agent-id:register:",
           humanIdentifier,
           BigInt(network.chainId),
           network.registryAddress,
+          nonce,
         ],
       ),
     );

@@ -4,7 +4,7 @@
 //
 // 1. THIS FILE (local ABI) — full contract surface including auto-generated
 //    public mapping getters (agentProofProvider, agentGuardian, agentHasHumanProof,
-//    agentIdToPubkey, etc.) plus management functions (guardianRevoke, selfDeregister).
+//    agentIdToAgentKey, agentNonces, etc.) plus management functions (guardianRevoke, selfDeregister).
 //    Used by dApp pages that need direct contract interaction beyond the standard interface.
 //
 // 2. @selfxyz/agent-sdk REGISTRY_ABI — the canonical cross-language interface.
@@ -26,7 +26,7 @@ export const REGISTRY_ABI = [
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function balanceOf(address owner) view returns (uint256)",
   "function scope() view returns (uint256)",
-  "function agentIdToPubkey(uint256 agentId) view returns (bytes32)",
+  "function agentIdToAgentKey(uint256 agentId) view returns (bytes32)",
   "function agentHasHumanProof(uint256 agentId) view returns (bool)",
   "function agentProofProvider(uint256 agentId) view returns (address)",
   // V4 additions
@@ -37,6 +37,8 @@ export const REGISTRY_ABI = [
   "function updateAgentMetadata(uint256 agentId, string metadata)",
   // V5: ZK-attested credentials
   "function getAgentCredentials(uint256 agentId) view returns ((string issuingState, string[] name, string idNumber, string nationality, string dateOfBirth, string gender, string expiryDate, uint256 olderThan, bool[3] ofac))",
+  // V5: per-agent nonce for replay-attack prevention on advanced/wallet-free registration
+  "function agentNonces(address agent) view returns (uint256)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ] as const;
 

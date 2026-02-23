@@ -1386,7 +1386,7 @@ export default function DemoPage() {
             const guardian: string = await registry.agentGuardian(agentId);
             if (guardian.toLowerCase() !== walletAddress.toLowerCase()) continue;
 
-            const agentKey: string = await registry.agentIdToPubkey(agentId);
+            const agentKey: string = await registry.agentIdToAgentKey(agentId);
             const isVerified: boolean = await registry.isVerifiedAgent(agentKey);
             if (!isVerified) continue;
 

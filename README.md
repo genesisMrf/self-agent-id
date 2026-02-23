@@ -1200,7 +1200,7 @@ self-agent-id/
 │   │   ├── demo/         # Live demo page
 │   │   └── erc8004/      # ERC-8004 spec page
 │   └── lib/              # Shared utilities (network.ts, snippets.ts)
-├── sdk/                  # TypeScript SDK
+├── typescript-sdk/       # TypeScript SDK
 │   └── src/              # SelfAgent, SelfAgentVerifier, CLI, registration
 ├── python-sdk/           # Python SDK
 │   └── src/self_agent_sdk/  # agent, verifier, middleware, CLI

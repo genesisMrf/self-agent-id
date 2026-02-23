@@ -674,10 +674,10 @@ contract SelfAgentRegistryTest is Test {
 
         _registerViaHub(humanAddr, nullifier);
 
-        bytes32 agentPubKey = _agentKeyFor(humanAddr);
-        uint256 agentId = registry.getAgentId(agentPubKey);
+        bytes32 agentKey = _agentKeyFor(humanAddr);
+        uint256 agentId = registry.getAgentId(agentKey);
         assertTrue(agentId != 0);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        assertTrue(registry.isVerifiedAgent(agentKey));
         assertEq(registry.ownerOf(agentId), humanAddr);
         assertEq(registry.getHumanNullifier(agentId), nullifier);
     }
@@ -687,12 +687,12 @@ contract SelfAgentRegistryTest is Test {
         vm.assume(nullifier != 0);
 
         _registerViaHub(humanAddr, nullifier);
-        bytes32 agentPubKey = _agentKeyFor(humanAddr);
-        uint256 agentId = registry.getAgentId(agentPubKey);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        bytes32 agentKey = _agentKeyFor(humanAddr);
+        uint256 agentId = registry.getAgentId(agentKey);
+        assertTrue(registry.isVerifiedAgent(agentKey));
 
         _deregisterViaHub(humanAddr, nullifier);
-        assertFalse(registry.isVerifiedAgent(agentPubKey));
+        assertFalse(registry.isVerifiedAgent(agentKey));
         assertFalse(registry.hasHumanProof(agentId));
     }
 
@@ -1265,10 +1265,10 @@ contract SelfAgentRegistryTest is Test {
 
         _registerWalletFree(humanAddr, nullifier, agentPrivKey, humanAddr);
 
-        bytes32 agentPubKey = bytes32(uint256(uint160(agentAddr)));
-        uint256 agentId = registry.getAgentId(agentPubKey);
+        bytes32 agentKey = bytes32(uint256(uint160(agentAddr)));
+        uint256 agentId = registry.getAgentId(agentKey);
         assertTrue(agentId != 0);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        assertTrue(registry.isVerifiedAgent(agentKey));
         assertEq(registry.ownerOf(agentId), agentAddr);
         assertEq(registry.agentGuardian(agentId), humanAddr);
     }

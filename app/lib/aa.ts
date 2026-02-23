@@ -139,6 +139,7 @@ export async function createPasskeyWallet(passkeyName: string, network?: Network
     passkeyName,
     passkeyServerUrl: getPasskeyServerUrl(),
     mode: WebAuthnMode.Register,
+    rpID: window.location.hostname,
   });
 
   const passkeyValidator = await toPasskeyValidator(publicClient, {
@@ -172,6 +173,7 @@ export async function signInWithPasskey(network?: NetworkConfig): Promise<{
     passkeyName: "Self Agent ID",
     passkeyServerUrl: getPasskeyServerUrl(),
     mode: WebAuthnMode.Login,
+    rpID: window.location.hostname,
   });
 
   const passkeyValidator = await toPasskeyValidator(publicClient, {
@@ -216,6 +218,7 @@ export async function sendUserOperation(
     passkeyName: "Self Agent ID",
     passkeyServerUrl: getPasskeyServerUrl(),
     mode: WebAuthnMode.Login,
+    rpID: window.location.hostname,
   });
 
   const passkeyValidator = await toPasskeyValidator(publicClient, {

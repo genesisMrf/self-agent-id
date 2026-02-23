@@ -704,11 +704,14 @@ contract SelfAgentRegistryTest is Test {
         uint256 privKey,
         address humanAddr
     ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
+        address agentAddr = vm.addr(privKey);
+        uint256 nonce = registry.agentNonces(agentAddr);
         bytes32 messageHash = keccak256(abi.encodePacked(
             "self-agent-id:register:",
             humanAddr,
             block.chainid,
-            address(registry)
+            address(registry),
+            nonce
         ));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (v, r, s) = vm.sign(privKey, ethSignedHash);
@@ -803,6 +806,40 @@ contract SelfAgentRegistryTest is Test {
         uint256 secondId = registry.getAgentId(advAgentKey1);
         assertTrue(registry.isVerifiedAgent(advAgentKey1));
         assertGt(secondId, firstId);
+    }
+
+    function test_RevertWhen_ReplayAttackAfterDeregister() public {
+        // Capture the signature at nonce 0
+        (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey1, human1);
+        bytes memory oldUserData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
+
+        // Register (consumes nonce 0) then deregister
+        bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(encodedOutput, oldUserData);
+        assertTrue(registry.isVerifiedAgent(advAgentKey1));
+        assertEq(registry.agentNonces(advAgentAddr1), 1, "Nonce should be 1 after registration");
+
+        _deregisterViaHubAdvanced(human1, nullifier1, advAgentAddr1);
+        assertFalse(registry.isVerifiedAgent(advAgentKey1));
+
+        // Replay the old signature — should fail because nonce is now 1
+        vm.prank(hubMock);
+        vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
+        registry.onVerificationSuccess(encodedOutput, oldUserData);
+    }
+
+    function test_NonceIncrementsOnRegistration() public {
+        assertEq(registry.agentNonces(advAgentAddr1), 0);
+
+        _registerViaHubAdvanced(human1, nullifier1, advAgentPrivKey1);
+        assertEq(registry.agentNonces(advAgentAddr1), 1);
+
+        _deregisterViaHubAdvanced(human1, nullifier1, advAgentAddr1);
+
+        // Re-register with fresh signature (nonce 1)
+        _registerViaHubAdvanced(human1, nullifier1, advAgentPrivKey1);
+        assertEq(registry.agentNonces(advAgentAddr1), 2);
     }
 
     function test_RevertWhen_AdvancedWrongSignature() public {
@@ -1709,11 +1746,13 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_AdvancedSignatureWrongChain() public {
         // Sign with a different chainId by manually constructing the wrong hash
+        uint256 nonce = registry.agentNonces(advAgentAddr1);
         bytes32 wrongHash = keccak256(abi.encodePacked(
             "self-agent-id:register:",
             human1,
             uint256(999), // wrong chain ID
-            address(registry)
+            address(registry),
+            nonce
         ));
         bytes32 ethSigned = MessageHashUtils.toEthSignedMessageHash(wrongHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(advAgentPrivKey1, ethSigned);

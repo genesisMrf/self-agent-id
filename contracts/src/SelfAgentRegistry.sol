@@ -89,6 +89,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     /// @notice Maps agentId to delegated credential metadata (JSON string)
     mapping(uint256 => string) public agentMetadata;
 
+    /// @notice Nonce per agent address to prevent signature replay attacks
+    mapping(address => uint256) public agentNonces;
+
     /// @notice Stores ZK-attested credential claims for each agent
     struct AgentCredentials {
         string issuingState;
@@ -624,6 +627,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     // ====================================================
 
     /// @notice Verify an agent's ECDSA signature over a registration challenge
+    /// @dev Includes a per-agent nonce to prevent replay attacks. The nonce is
+    ///      incremented after each successful verification, invalidating old signatures.
+    ///      Callers (dApp/SDK) must read agentNonces[agentAddress] before signing.
     /// @param agentAddress The agent's Ethereum address (recovered signer must match)
     /// @param humanAddress The human's address (included in signed message)
     /// @param v ECDSA recovery parameter
@@ -636,16 +642,19 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) internal view returns (bytes32 agentPubKey) {
+    ) internal returns (bytes32 agentPubKey) {
+        uint256 nonce = agentNonces[agentAddress];
         bytes32 messageHash = keccak256(abi.encodePacked(
             "self-agent-id:register:",
             humanAddress,
             block.chainid,
-            address(this)
+            address(this),
+            nonce
         ));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         address recovered = ECDSA.recover(ethSignedHash, v, r, s);
         if (recovered != agentAddress) revert InvalidAgentSignature();
+        agentNonces[agentAddress] = nonce + 1;
         return bytes32(uint256(uint160(agentAddress)));
     }
 

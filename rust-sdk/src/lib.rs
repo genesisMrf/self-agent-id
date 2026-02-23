@@ -36,6 +36,7 @@
 pub mod agent;
 pub mod agent_card;
 pub mod constants;
+pub mod registration;
 pub mod registration_flow;
 pub mod verifier;
 
@@ -49,6 +50,13 @@ pub use agent_card::{
     get_provider_label, get_strength_color,
 };
 pub use constants::{headers, NetworkName};
+pub use registration::{
+    RegistrationDisclosures, SignatureParts, SignedRegistrationChallenge,
+    build_advanced_deregister_user_data_ascii, build_advanced_register_user_data_ascii,
+    build_simple_deregister_user_data_ascii, build_simple_register_user_data_ascii,
+    build_wallet_free_register_user_data_ascii, compute_registration_challenge_hash,
+    get_registration_config_index, sign_registration_challenge,
+};
 pub use registration_flow::{
     DeregistrationRequest, DeregistrationSession, RegistrationError, RegistrationRequest,
     RegistrationResult, RegistrationSession,

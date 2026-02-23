@@ -1,11 +1,16 @@
-use alloy::primitives::{keccak256, Address, U256};
+use alloy::primitives::Address;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::signers::Signer;
-use alloy::sol_types::SolValue;
 use base64::Engine;
 use self_agent_sdk::agent::address_to_agent_key;
 use self_agent_sdk::constants::{network_config, IAgentRegistry, NetworkName};
+use self_agent_sdk::registration::{
+    RegistrationDisclosures, SignatureParts,
+    build_advanced_deregister_user_data_ascii, build_advanced_register_user_data_ascii,
+    build_simple_deregister_user_data_ascii, build_simple_register_user_data_ascii,
+    build_wallet_free_register_user_data_ascii, get_registration_config_index,
+    sign_registration_challenge,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -51,14 +56,6 @@ struct CliNetwork {
     app_url: String,
     app_name: String,
     scope: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SignatureParts {
-    r: String,
-    s: String,
-    v: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,104 +319,12 @@ fn parse_network(flags: &HashMap<String, String>) -> Result<CliNetwork, String> 
     })
 }
 
-fn registration_config_index(d: &Disclosures) -> u8 {
-    match (d.minimum_age, d.ofac) {
-        (18, true) => 4,
-        (21, true) => 5,
-        (18, false) => 1,
-        (21, false) => 2,
-        (0, true) => 3,
-        _ => 0,
+/// Convert CLI Disclosures to library RegistrationDisclosures.
+fn to_reg_disclosures(d: &Disclosures) -> RegistrationDisclosures {
+    RegistrationDisclosures {
+        minimum_age: d.minimum_age,
+        ofac: d.ofac,
     }
-}
-
-fn compute_registration_challenge_hash(
-    human_identifier: Address,
-    chain_id: u64,
-    registry_address: Address,
-) -> [u8; 32] {
-    let packed = (
-        "self-agent-id:register:".to_string(),
-        human_identifier,
-        U256::from(chain_id),
-        registry_address,
-    )
-        .abi_encode_packed();
-    keccak256(packed).into()
-}
-
-async fn sign_registration_challenge(
-    private_key: &str,
-    human_identifier: Address,
-    chain_id: u64,
-    registry_address: Address,
-) -> Result<(String, SignatureParts, String), String> {
-    let signer: PrivateKeySigner = private_key
-        .parse::<PrivateKeySigner>()
-        .map_err(|e| e.to_string())?;
-    let hash = compute_registration_challenge_hash(human_identifier, chain_id, registry_address);
-    let sig = signer
-        .sign_message(&hash)
-        .await
-        .map_err(|e| e.to_string())?;
-    let bytes = sig.as_bytes();
-    if bytes.len() != 65 {
-        return Err("Unexpected signature length".to_string());
-    }
-    let mut v = bytes[64] as u64;
-    if v == 0 || v == 1 {
-        v += 27;
-    }
-
-    let message_hash = format!("0x{}", hex::encode(hash));
-    let parts = SignatureParts {
-        r: format!("0x{}", hex::encode(&bytes[0..32])),
-        s: format!("0x{}", hex::encode(&bytes[32..64])),
-        v,
-    };
-    Ok((message_hash, parts, format!("{:#x}", signer.address())))
-}
-
-fn build_simple_user_data(disclosures: &Disclosures) -> String {
-    format!("R{}", registration_config_index(disclosures))
-}
-
-fn build_simple_deregister_user_data(disclosures: &Disclosures) -> String {
-    format!("D{}", registration_config_index(disclosures))
-}
-
-fn build_advanced_user_data(
-    disclosures: &Disclosures,
-    agent_address: &str,
-    sig: &SignatureParts,
-) -> String {
-    let cfg = registration_config_index(disclosures);
-    let addr_hex = agent_address.trim_start_matches("0x").to_lowercase();
-    let r_hex = sig.r.trim_start_matches("0x").to_lowercase();
-    let s_hex = sig.s.trim_start_matches("0x").to_lowercase();
-    let v_hex = format!("{:02x}", sig.v);
-    format!("K{cfg}{addr_hex}{r_hex}{s_hex}{v_hex}")
-}
-
-fn build_advanced_deregister_user_data(disclosures: &Disclosures, agent_address: &str) -> String {
-    let cfg = registration_config_index(disclosures);
-    let addr_hex = agent_address.trim_start_matches("0x").to_lowercase();
-    format!("X{cfg}{addr_hex}")
-}
-
-fn build_wallet_free_user_data(
-    disclosures: &Disclosures,
-    agent_address: &str,
-    guardian_address: &str,
-    sig: &SignatureParts,
-) -> String {
-    let cfg = registration_config_index(disclosures);
-    let addr_hex = agent_address.trim_start_matches("0x").to_lowercase();
-    let guardian_hex = guardian_address.trim_start_matches("0x").to_lowercase();
-    let r_hex = sig.r.trim_start_matches("0x").to_lowercase();
-    let s_hex = sig.s.trim_start_matches("0x").to_lowercase();
-    let v_hex = format!("{:02x}", sig.v);
-    format!("W{cfg}{addr_hex}{guardian_hex}{r_hex}{s_hex}{v_hex}")
 }
 
 fn callback_url(session: &CliSession) -> String {
@@ -525,10 +430,12 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
         );
     }
 
+    let reg_d = to_reg_disclosures(&disclosures);
+
     if operation == OP_REGISTER {
         if mode == "verified-wallet" {
             agent_address = human_identifier.clone();
-            user_defined_data = Some(build_simple_user_data(&disclosures));
+            user_defined_data = Some(build_simple_register_user_data_ascii(&reg_d));
         } else {
             let pk = random_private_key_hex()?;
             let signer: PrivateKeySigner =
@@ -543,23 +450,25 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
             let reg_addr =
                 Address::from_str(&network.registry_address).map_err(|e| e.to_string())?;
             let human_addr = Address::from_str(&human_identifier).map_err(|e| e.to_string())?;
-            let (msg_hash, sig_parts, _) =
-                sign_registration_challenge(&pk, human_addr, network.chain_id, reg_addr).await?;
-            challenge_hash = Some(msg_hash);
+            let signed = sign_registration_challenge(&pk, human_addr, network.chain_id, reg_addr)
+                .await
+                .map_err(|e| e.to_string())?;
+            challenge_hash = Some(signed.message_hash.clone());
+            let sig_parts = signed.parts.clone();
             signature = Some(sig_parts.clone());
 
             if mode == "agent-identity" {
-                user_defined_data = Some(build_advanced_user_data(
-                    &disclosures,
+                user_defined_data = Some(build_advanced_register_user_data_ascii(
                     &agent_address,
                     &sig_parts,
+                    &reg_d,
                 ));
             } else if mode == "wallet-free" {
-                user_defined_data = Some(build_wallet_free_user_data(
-                    &disclosures,
+                user_defined_data = Some(build_wallet_free_register_user_data_ascii(
                     &agent_address,
                     "0x0000000000000000000000000000000000000000",
                     &sig_parts,
+                    &reg_d,
                 ));
             } else if mode == "smart-wallet" {
                 smart_wallet_template = Some(SmartWalletTemplate {
@@ -567,14 +476,14 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
                     r: sig_parts.r.clone(),
                     s: sig_parts.s.clone(),
                     v: sig_parts.v,
-                    config_index: registration_config_index(&disclosures),
+                    config_index: get_registration_config_index(&reg_d),
                 });
             }
         }
     } else {
         if mode == "verified-wallet" {
             agent_address = human_identifier.clone();
-            user_defined_data = Some(build_simple_deregister_user_data(&disclosures));
+            user_defined_data = Some(build_simple_deregister_user_data_ascii(&reg_d));
         } else if mode == "agent-identity" {
             let agent = flags
                 .get("agent-address")
@@ -582,9 +491,9 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
                 .ok_or("--agent-address is required for agent-identity deregistration")?;
             let parsed = Address::from_str(&agent).map_err(|e| e.to_string())?;
             agent_address = format!("{:#x}", parsed);
-            user_defined_data = Some(build_advanced_deregister_user_data(
-                &disclosures,
+            user_defined_data = Some(build_advanced_deregister_user_data_ascii(
                 &agent_address,
+                &reg_d,
             ));
         } else if mode == "wallet-free" || mode == "smart-wallet" {
             let agent = flags.get("agent-address").cloned().ok_or(
@@ -593,7 +502,7 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
             let parsed = Address::from_str(&agent).map_err(|e| e.to_string())?;
             agent_address = format!("{:#x}", parsed);
             human_identifier = agent_address.clone();
-            user_defined_data = Some(build_simple_deregister_user_data(&disclosures));
+            user_defined_data = Some(build_simple_deregister_user_data_ascii(&reg_d));
         }
     }
 

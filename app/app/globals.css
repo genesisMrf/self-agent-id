@@ -78,6 +78,19 @@ input:focus, select:focus, textarea:focus {
     background-size: 48px 48px;
   }
 
+  .dark-section {
+    background: #0f172a;
+    color: #f1f5f9;
+    --foreground: #f1f5f9;
+    --surface-1: #1e293b;
+    --surface-2: #020617;
+    --border: #334155;
+    --border-strong: #475569;
+    --text-muted: #94a3b8;
+    --text-subtle: #64748b;
+    --glow-accent: 0 1px 3px rgba(99, 102, 241, 0.3);
+  }
+
   .hero-glow::before {
     content: "";
     position: absolute;

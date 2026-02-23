@@ -283,7 +283,8 @@ export default function Home() {
       </section>
 
       {/* ────────────── For Developers ────────────── */}
-      <section className="bg-surface-1 px-6 py-20">
+      {/* ── Dark-mode developer section ── */}
+      <section className="dark-section px-6 py-20">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Code2 size={20} className="text-accent" />
@@ -333,7 +334,7 @@ const res = await agent.fetch(url);`}
 
           <div className="flex justify-center mt-8">
             <Link href="/explainer">
-              <Button variant="secondary">
+              <Button variant="primary">
                 See the full integration guide <ArrowRight size={14} />
               </Button>
             </Link>

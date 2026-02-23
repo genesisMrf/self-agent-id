@@ -136,10 +136,10 @@ Self Agent ID is an on-chain identity registry that binds AI agent identities to
 
 | Contract | Address |
 |----------|---------|
-| SelfAgentRegistry | `0x62e37d0f6c5f67784b8828b3df68bcdbb2e55095` |
-| SelfHumanProofProvider | `0x0B43f87aE9F2AE2a50b3698573B614fc6643A084` |
-| AgentDemoVerifier | `0x0aA08262b0Bd2d07ab15ffc8FFfF3D256291e0b2` |
-| AgentGate | `0x2d710190e018fCf006E38eEB869b25C5F7d82424` |
+| SelfAgentRegistry | `0x60651482a3033A72128f874623Fc790061cc46D4` |
+| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
+| AgentDemoVerifier | `0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C` |
+| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` |
 
 - RPC: `https://forno.celo.org`
@@ -150,10 +150,10 @@ Self Agent ID is an on-chain identity registry that binds AI agent identities to
 
 | Contract | Address |
 |----------|---------|
-| SelfAgentRegistry | `0x42cea1b318557ade212bed74fc3c7f06ec52bd5b` |
-| SelfHumanProofProvider | `0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4` |
-| AgentDemoVerifier | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` |
-| AgentGate | `0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577` |
+| SelfAgentRegistry | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
+| SelfHumanProofProvider | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| AgentDemoVerifier | `0x31A5A1d34728c5e6425594A596997A7Bf4aD607d` |
+| AgentGate | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
 | Hub V2 | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 
 - RPC: `https://forno.celo-sepolia.celo-testnet.org`
@@ -528,9 +528,9 @@ Agent cards follow a standardized format for agent-to-agent discovery:
   "skills": [{ "name": "data-analysis", "description": "Analyzes CSV data" }],
   "selfProtocol": {
     "agentId": 5,
-    "registry": "0x62e37d0f6c5f67784b8828b3df68bcdbb2e55095",
+    "registry": "0x60651482a3033A72128f874623Fc790061cc46D4",
     "chainId": 42220,
-    "proofProvider": "0x0B43f87aE9F2AE2a50b3698573B614fc6643A084",
+    "proofProvider": "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
     "providerName": "self",
     "verificationStrength": 100,
     "trustModel": {
@@ -671,7 +671,7 @@ Sessions are persisted as JSON with restricted file permissions (0600):
   "network": {
     "chainId": 11142220,
     "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
-    "registryAddress": "0x42cea1b318557ade212bed74fc3c7f06ec52bd5b",
+    "registryAddress": "0x29d941856134b1D053AfFF57fa560324510C79fa",
     "endpointType": "staging_celo",
     "appUrl": "...",
     "appName": "Self Agent ID",
@@ -827,7 +827,7 @@ SDK default base URL can be overridden with env var `SELF_AGENT_API_BASE`.
   "agentKey": "0x00000000000000000000000083fa4380903fecb801f4e123835664973001ff00",
   "agentAddress": "0x83fa4380903fecb801F4e123835664973001ff00",
   "isVerified": true,
-  "proofProvider": "0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4",
+  "proofProvider": "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
   "verificationStrength": 100,
   "strengthLabel": "passport",
   "credentials": {

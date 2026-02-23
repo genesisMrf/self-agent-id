@@ -37,7 +37,7 @@ async fn read_demo_agent_is_verified_on_chain() {
             .unwrap(),
     );
     let registry_addr =
-        Address::from_str("0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b").unwrap();
+        Address::from_str("0x29d941856134b1D053AfFF57fa560324510C79fa").unwrap();
 
     use self_agent_sdk::constants::IAgentRegistry;
     let registry = IAgentRegistry::new(registry_addr, &provider);

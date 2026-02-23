@@ -6,7 +6,7 @@ import { CORS_HEADERS, corsResponse, errorResponse, validateAgentId } from "@/li
 
 // Supplemental ABI for functions not in the SDK's REGISTRY_ABI
 const REGISTRY_EXT_ABI = [
-  "function agentIdToPubkey(uint256 agentId) view returns (bytes32)",
+  "function agentIdToAgentKey(uint256 agentId) view returns (bytes32)",
 ] as const;
 
 export async function GET(
@@ -28,7 +28,7 @@ export async function GET(
     // Fetch core agent data in parallel
     const [agentKey, hasProof, providerAddr, registeredAt, credentials] =
       await Promise.all([
-        registryExt.agentIdToPubkey(id) as Promise<string>,
+        registryExt.agentIdToAgentKey(id) as Promise<string>,
         registry.hasHumanProof(id) as Promise<boolean>,
         registry.getProofProvider(id) as Promise<string>,
         registry.agentRegisteredAt(id) as Promise<bigint>,

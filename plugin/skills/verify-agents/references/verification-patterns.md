@@ -10,9 +10,9 @@ Reference these addresses throughout all verification code:
 
 | Contract | Mainnet (42220) | Testnet (11142220) |
 |---|---|---|
-| SelfAgentRegistry | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` | `0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b` |
-| SelfHumanProofProvider | `0x0B43f87aE9F2AE2a50b3698573B614fc6643A084` | `0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4` |
-| AgentGate | `0x2d710190e018fCf006E38eEB869b25C5F7d82424` | `0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577` |
+| SelfAgentRegistry | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
+| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 
 ---
@@ -523,8 +523,8 @@ function requireHuman(uint256 agentId) internal view {
 **CRITICAL: Always check the provider in production.**
 
 ```solidity
-address constant SELF_PROVIDER_MAINNET = 0x0B43f87aE9F2AE2a50b3698573B614fc6643A084;
-address constant SELF_PROVIDER_TESTNET = 0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4;
+address constant SELF_PROVIDER_MAINNET = 0xb0F718Bad279e51A9447D36EAa457418dBd4D95b;
+address constant SELF_PROVIDER_TESTNET = 0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81;
 
 function requireSelfProvider(uint256 agentId) internal view {
     address provider = registry.getProofProvider(agentId);
@@ -840,7 +840,7 @@ const REGISTRY_ABI = [
   "function getAgentCountForHuman(uint256 nullifier) view returns (uint256)",
 ];
 
-const SELF_PROVIDER_MAINNET = "0x0B43f87aE9F2AE2a50b3698573B614fc6643A084";
+const SELF_PROVIDER_MAINNET = "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b";
 const REGISTRY_MAINNET = "0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095";
 
 async function verifyAgentRequest(

@@ -28,11 +28,11 @@ export type NetworkName = "mainnet" | "testnet";
 /** Per-network configuration (registry address + RPC URL) */
 export const NETWORKS: Record<NetworkName, { registryAddress: string; rpcUrl: string }> = {
   mainnet: {
-    registryAddress: "0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095",
+    registryAddress: "0x60651482a3033A72128f874623Fc790061cc46D4",
     rpcUrl: "https://forno.celo.org",
   },
   testnet: {
-    registryAddress: "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+    registryAddress: "0x29d941856134b1D053AfFF57fa560324510C79fa",
     rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
   },
 };

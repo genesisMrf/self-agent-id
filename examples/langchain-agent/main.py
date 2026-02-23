@@ -44,12 +44,12 @@ app.add_middleware(
 NETWORKS = {
     "celo-mainnet": {
         "rpc_url": "https://forno.celo.org",
-        "registry_address": "0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095",
+        "registry_address": "0x60651482a3033A72128f874623Fc790061cc46D4",
         "label": "Celo Mainnet",
     },
     "celo-sepolia": {
         "rpc_url": "https://forno.celo-sepolia.celo-testnet.org",
-        "registry_address": "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+        "registry_address": "0x29d941856134b1D053AfFF57fa560324510C79fa",
         "label": "Celo Sepolia",
     },
 }

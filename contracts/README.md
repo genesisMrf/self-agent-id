@@ -21,18 +21,18 @@ On-chain AI agent registry with ERC-8004 proof-of-human extension, deployed on C
 | Contract | Address |
 |----------|---------|
 | Registry | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` |
-| Provider | `0x0B43f87aE9F2AE2a50b3698573B614fc6643A084` |
+| Provider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
 | DemoVerifier | `0x063c3bc21F0C4A6c51A84B1dA6de6510508E4F1e` |
-| AgentGate | `0x2d710190e018fCf006E38eEB869b25C5F7d82424` |
+| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` |
 
 ### Celo Sepolia (11142220)
 
 | Contract | Address |
 |----------|---------|
-| Registry | `0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b` |
-| Provider | `0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4` |
-| DemoVerifier | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` |
-| AgentGate | `0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577` |
+| Registry | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
+| Provider | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| DemoVerifier | `0x31A5A1d34728c5e6425594A596997A7Bf4aD607d` |
+| AgentGate | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
 
 ## Build & Test
 

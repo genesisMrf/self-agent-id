@@ -108,8 +108,9 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     /// @notice Maps agentId to ZK-attested credentials (populated at registration)
     mapping(uint256 => AgentCredentials) private _agentCredentials;
 
-    /// @notice Maximum agents per human (0 = unlimited, default = 1)
-    uint256 public maxAgentsPerHuman = 1;
+    /// @notice Maximum agents per human (0 = unlimited)
+    /// Sybil resistance is enforced per-service by the SDK verifier, not here.
+    uint256 public maxAgentsPerHuman = 0;
 
     /// @notice The next agent ID to mint
     uint256 private _nextAgentId;

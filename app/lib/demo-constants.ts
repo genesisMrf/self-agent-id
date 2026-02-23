@@ -1,8 +1,31 @@
 import { ethers } from "ethers";
+import type { NetworkId } from "./network";
 
-// Pre-registered demo agent (registered on both Celo mainnet and Sepolia)
-export const DEMO_AGENT_ADDRESS = "0xcfCACe4011fF8567cf2ED355116b2A7Dc2dEAbbA";
-export const DEMO_AGENT_KEY = ethers.zeroPadValue(DEMO_AGENT_ADDRESS, 32);
+// Pre-registered demo agents (one per network)
+export const DEMO_AGENTS: Record<NetworkId, { address: string; key: string }> = {
+  "celo-sepolia": {
+    address: "0xbEFb51b4c4b2B91f3685463360DD62f76aEe7ADF",
+    key: ethers.zeroPadValue("0xbEFb51b4c4b2B91f3685463360DD62f76aEe7ADF", 32),
+  },
+  "celo-mainnet": {
+    address: "0x47a0B2c77b0c57B8d5E95Bf31D502a05211bB6FC",
+    key: ethers.zeroPadValue("0x47a0B2c77b0c57B8d5E95Bf31D502a05211bB6FC", 32),
+  },
+};
+
+/** Get demo agent address for a given network */
+export function getDemoAgentAddress(networkId: NetworkId): string {
+  return DEMO_AGENTS[networkId].address;
+}
+
+/** Get demo agent key (bytes32) for a given network */
+export function getDemoAgentKey(networkId: NetworkId): string {
+  return DEMO_AGENTS[networkId].key;
+}
+
+// Legacy exports for backward compat (default to Sepolia)
+export const DEMO_AGENT_ADDRESS = DEMO_AGENTS["celo-sepolia"].address;
+export const DEMO_AGENT_KEY = DEMO_AGENTS["celo-sepolia"].key;
 
 export const TESTS = [
   {

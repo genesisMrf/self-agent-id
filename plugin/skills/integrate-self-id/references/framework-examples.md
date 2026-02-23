@@ -1178,19 +1178,19 @@ forge verify-contract \
 
 | Parameter | Value |
 |---|---|
-| `_registry` | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` |
+| `_registry` | `0x60651482a3033A72128f874623Fc790061cc46D4` |
 | `_reputation` | (deployed alongside registry) |
 | `_validation` | (deployed alongside registry) |
-| `_selfProvider` | `0x0B43f87aE9F2AE2a50b3698573B614fc6643A084` |
+| `_selfProvider` | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
 
 **Testnet (Celo Sepolia, chain 11142220):**
 
 | Parameter | Value |
 |---|---|
-| `_registry` | `0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b` |
+| `_registry` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
 | `_reputation` | (deployed alongside registry) |
 | `_validation` | (deployed alongside registry) |
-| `_selfProvider` | `0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4` |
+| `_selfProvider` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
 
 ---
 

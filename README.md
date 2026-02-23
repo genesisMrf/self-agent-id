@@ -1218,3 +1218,76 @@ self-agent-id/
 - `docs/SELF_PROTOCOL_INTEGRATION.md` — Self Protocol integration guide
 - `docs/CLI_REGISTRATION_SPEC.md` — CLI command specification
 - `docs/CLI_REGISTRATION_GUIDE.md` — Human + agent-guided registration workflows
+
+---
+
+## Claude Code Plugin
+
+Install the plugin for guided AI-assisted workflows:
+
+```bash
+claude plugin add /path/to/self-agent-id/plugin
+```
+
+### Skills (6)
+
+| Skill | Triggers |
+|---|---|
+| `self-agent-id-overview` | "what is self agent id", "explain ERC-8004" |
+| `register-agent` | "register agent", "create agent identity" |
+| `sign-requests` | "sign request", "agent auth headers" |
+| `verify-agents` | "verify agent", "add verification middleware" |
+| `query-credentials` | "lookup agent", "agent credentials" |
+| `integrate-self-id` | "add self agent id to my project" |
+
+See [plugin README](plugin/README.md) for setup details.
+
+---
+
+## Development
+
+### Local Setup
+
+```bash
+# Smart contracts
+cd contracts && forge install && forge build --evm-version cancun && forge test
+
+# dApp
+cd app && cp .env.example .env.local && npm install && npm run dev
+
+# TypeScript SDK
+cd typescript-sdk && npm install && npm test
+
+# Python SDK
+cd python-sdk && pip install -e ".[dev]" && pytest
+
+# Rust SDK
+cd rust-sdk && cargo test
+```
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SELF_AGENT_PRIVATE_KEY` | — | Agent's hex private key |
+| `SELF_NETWORK` | `testnet` | `mainnet` or `testnet` |
+| `SELF_AGENT_API_BASE` | `https://self-agent-id.vercel.app` | API base URL override |
+
+Priority: explicit param > env var > default. Note: `SELF_API_URL` is removed — use `SELF_AGENT_API_BASE`.
+
+---
+
+## Examples
+
+See the [`examples/`](examples/) directory:
+
+- **`minimal-ts/`** — TypeScript agent + Express verifier
+- **`minimal-python/`** — Python agent + FastAPI verifier
+- **`minimal-rust/`** — Rust agent + Axum verifier
+- **`langchain-agent/`** — Python LangChain agent with verification gate
+
+---
+
+## License
+
+MIT

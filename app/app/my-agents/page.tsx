@@ -233,7 +233,7 @@ export default function MyAgentsPage() {
 
           if (guardian.toLowerCase() !== guardianAddress.toLowerCase()) continue;
 
-          const agentKey: string = await registry.agentIdToPubkey(agentId);
+          const agentKey: string = await registry.agentIdToAgentKey(agentId);
           const isVerified: boolean = await registry.isVerifiedAgent(agentKey);
           const registeredAt: bigint = await registry.agentRegisteredAt(agentId);
           const agentAddress = "0x" + agentKey.slice(26);
@@ -320,7 +320,7 @@ export default function MyAgentsPage() {
           const currentOwner: string = await registry.ownerOf(agentId);
           if (currentOwner.toLowerCase() !== ownerAddress.toLowerCase()) continue;
 
-          const agentKey: string = await registry.agentIdToPubkey(agentId);
+          const agentKey: string = await registry.agentIdToAgentKey(agentId);
           const isVerified: boolean = await registry.isVerifiedAgent(agentKey);
           const registeredAt: bigint = await registry.agentRegisteredAt(agentId);
 
@@ -444,6 +444,7 @@ export default function MyAgentsPage() {
             <p className="text-xs text-subtle text-center max-w-xs">
               Uses your passkey (Face ID / fingerprint) to find agents where your smart wallet is the guardian.
             </p>
+            {error && <p className="text-sm text-accent-error text-center max-w-xs">{error}</p>}
           </div>
         ) : (
           <div className="space-y-4">

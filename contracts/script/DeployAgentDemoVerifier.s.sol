@@ -10,7 +10,7 @@ import { console } from "forge-std/console.sol";
 /// @dev Requires environment variables:
 ///      - PRIVATE_KEY: Deployer private key
 ///      - REGISTRY_ADDRESS: SelfAgentRegistry address
-///        Celo Sepolia V4: 0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b
+///        Celo Sepolia V5: 0x29d941856134b1D053AfFF57fa560324510C79fa
 contract DeployAgentDemoVerifier is BaseScript {
     function run() public broadcast returns (AgentDemoVerifier verifier) {
         address registryAddress = vm.envAddress("REGISTRY_ADDRESS");

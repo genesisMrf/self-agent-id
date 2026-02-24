@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ethers } from "ethers";
-import { SelfAgentVerifier, SelfAgent, HEADERS } from "@selfxyz/agent-sdk";
+import { SelfAgent, HEADERS } from "@selfxyz/agent-sdk";
 import { getNetwork, NETWORKS, type NetworkId } from "@/lib/network";
+import { getCachedVerifier } from "@/lib/selfVerifier";
+import { checkAndRecordReplay } from "@/lib/replayGuard";
 
-const DEMO_AGENT_PK = process.env.DEMO_AGENT_PRIVATE_KEY;
+// Per-network demo agent private keys
+const DEMO_KEYS: Record<NetworkId, string | undefined> = {
+  "celo-sepolia": process.env.DEMO_AGENT_PRIVATE_KEY_SEPOLIA,
+  "celo-mainnet": process.env.DEMO_AGENT_PRIVATE_KEY_MAINNET,
+};
 
 // In-memory counters (resets on server restart — fine for demo)
 let verificationCount = 0;
@@ -16,14 +22,15 @@ function resolveNetwork(req: NextRequest): NetworkId {
 }
 
 export async function POST(req: NextRequest) {
-  if (!DEMO_AGENT_PK) {
+  const network = getNetwork(resolveNetwork(req));
+  const demoAgentPk = DEMO_KEYS[network.id];
+
+  if (!demoAgentPk) {
     return NextResponse.json(
-      { error: "Demo agent not configured (missing DEMO_AGENT_PRIVATE_KEY)" },
+      { error: `Demo agent not configured for ${network.label} (missing DEMO_AGENT_PRIVATE_KEY_${network.isTestnet ? "SEPOLIA" : "MAINNET"})` },
       { status: 500 }
     );
   }
-
-  const network = getNetwork(resolveNetwork(req));
 
   // 1. Extract caller's signature headers
   const signature = req.headers.get(HEADERS.SIGNATURE);
@@ -39,11 +46,10 @@ export async function POST(req: NextRequest) {
   const body = await req.text();
 
   // 2. Demo agent verifies the caller's identity on-chain
-  const verifier = new SelfAgentVerifier({
-    registryAddress: network.registryAddress,
-    rpcUrl: network.rpcUrl,
+  const verifier = getCachedVerifier(network.id, {
     maxAgentsPerHuman: 0,
     includeCredentials: false,
+    enableReplayProtection: true,
   });
 
   const verifyResult = await verifier.verify({
@@ -64,9 +70,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const replay = await checkAndRecordReplay({
+    signature,
+    timestamp,
+    method: "POST",
+    url: req.url,
+    body: body || undefined,
+    scope: "demo-agent-to-agent",
+  });
+  if (!replay.ok) {
+    return NextResponse.json(
+      {
+        verified: false,
+        error: replay.error || "Replay detected",
+      },
+      { status: 409 },
+    );
+  }
+
   // 3. Demo agent does on-chain sameHuman check
   const demoAgent = new SelfAgent({
-    privateKey: DEMO_AGENT_PK,
+    privateKey: demoAgentPk,
     registryAddress: network.registryAddress,
     rpcUrl: network.rpcUrl,
   });

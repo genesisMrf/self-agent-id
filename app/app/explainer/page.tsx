@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { ethers } from "ethers";
+import MatrixText from "@/components/MatrixText";
 import {
   Users,
   Lock,
@@ -15,87 +14,18 @@ import {
   Fingerprint,
   Wallet,
   Key,
-  Search,
   ExternalLink,
   Code2,
-  Cpu,
 } from "lucide-react";
 import CodeBlock from "@/components/CodeBlock";
-import { getServiceSnippets, getAgentSnippets, SERVICE_FEATURES, AGENT_FEATURES } from "@/lib/snippets";
-import { REGISTRY_ABI } from "@/lib/constants";
 import { useNetwork } from "@/lib/NetworkContext";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 
 
-type VerifyStatus = "idle" | "loading" | "verified" | "not-registered" | "error";
-
 export default function ExplainerPage() {
   const { network } = useNetwork();
-  const [pubKeyInput, setPubKeyInput] = useState("");
-  const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>("idle");
-  const [verifyError, setVerifyError] = useState("");
-  const [activeUseCase, setActiveUseCase] = useState(0);
-  const [activeAgentSnippet, setActiveAgentSnippet] = useState(0);
-  const [activeServiceFeatures, setActiveServiceFeatures] = useState<Set<string>>(new Set());
-  const [activeAgentFeatures, setActiveAgentFeatures] = useState<Set<string>>(new Set());
-
-  const toggleServiceFeature = (id: string) => {
-    setActiveServiceFeatures((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAgentFeature = (id: string) => {
-    setActiveAgentFeatures((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const snippets = getServiceSnippets(network.registryAddress, network.rpcUrl, activeServiceFeatures);
-  const agentSnippets = getAgentSnippets(network.registryAddress, network.rpcUrl, activeAgentFeatures);
-
-  const handleVerify = async () => {
-    const trimmed = pubKeyInput.trim();
-    if (!trimmed) return;
-
-    setVerifyStatus("loading");
-    setVerifyError("");
-
-    try {
-      const provider = new ethers.JsonRpcProvider(network.rpcUrl);
-      const registry = new ethers.Contract(network.registryAddress, REGISTRY_ABI, provider);
-
-      let key = trimmed;
-      if (!key.startsWith("0x")) {
-        key = "0x" + key;
-      }
-
-      let keyHash: string;
-      if (key.length === 66) {
-        keyHash = key;
-      } else if (key.length === 42) {
-        keyHash = ethers.zeroPadValue(key, 32);
-      } else {
-        setVerifyStatus("error");
-        setVerifyError("Enter an address (0x + 40 hex) or bytes32 key (0x + 64 hex).");
-        return;
-      }
-
-      const isVerified: boolean = await registry.isVerifiedAgent(keyHash);
-      setVerifyStatus(isVerified ? "verified" : "not-registered");
-    } catch (err: unknown) {
-      setVerifyStatus("error");
-      setVerifyError(err instanceof Error ? err.message : "Failed to query contract");
-    }
-  };
 
   return (
     <main className="min-h-screen">
@@ -116,9 +46,9 @@ export default function ExplainerPage() {
             without revealing who that human is.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
-            <a href="#demo">
-              <Button variant="primary" size="lg">Try the Demo</Button>
-            </a>
+            <Link href="/integration">
+              <Button variant="primary" size="lg">Integration Guide</Button>
+            </Link>
             <a href="#spec">
               <Button variant="secondary" size="lg">Read the Spec</Button>
             </a>
@@ -221,127 +151,27 @@ export default function ExplainerPage() {
         </div>
       </section>
 
-      {/* ───────────────────── 3b. Integration Guide ──────────────────────── */}
-      <section className="px-6 py-20">
-        <div className="max-w-4xl mx-auto space-y-8">
-          {/* Service developer snippets */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
+      {/* ───────────────────── CTA: Integration Guide ──────────────────────── */}
+      <section className="px-6 py-12">
+        <div className="max-w-4xl mx-auto">
+          <Card className="border border-accent/30 bg-accent/5 text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
               <Code2 size={20} className="text-accent" />
-              <h2 className="text-3xl font-bold">Integration Guide for Developers</h2>
+              <p className="font-bold text-lg">Ready to Integrate?</p>
             </div>
-            <p className="text-sm text-muted">
-              These code snippets are for <strong className="text-foreground">service developers</strong> who want to verify
-              agents in their applications. Pre-filled with the deployed contract address.
+            <p className="text-sm text-muted mb-4 max-w-lg mx-auto">
+              Get code snippets for verifying agents in your service, authenticating your agent with services,
+              and using the CLI for terminal workflows &mdash; in TypeScript, Python, and Rust.
             </p>
-            <div className="flex gap-3 flex-wrap">
-              <code className="bg-surface-2 font-mono text-accent-2 px-3 py-1.5 rounded text-xs">
-                npm install @selfxyz/agent-sdk
-              </code>
-              <code className="bg-surface-2 font-mono text-accent-2 px-3 py-1.5 rounded text-xs">
-                pip install selfxyz-agent-sdk
-              </code>
+            <div className="flex justify-center gap-3">
+              <Link href="/integration">
+                <Button variant="primary">Integration Guide</Button>
+              </Link>
+              <Link href="/demo">
+                <Button variant="secondary">Try the Demo</Button>
+              </Link>
             </div>
-
-            <div className="flex gap-2 flex-wrap">
-              {snippets.map((uc, i) => (
-                <button
-                  key={uc.title}
-                  onClick={() => setActiveUseCase(i)}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                    i === activeUseCase
-                      ? "bg-gradient-to-r from-accent to-accent-2 text-white border-transparent"
-                      : "bg-surface-1 text-foreground border-border hover:bg-surface-2"
-                  }`}
-                >
-                  {uc.title}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-1.5 flex-wrap">
-              {SERVICE_FEATURES.map((feat) => {
-                const active = activeServiceFeatures.has(feat.id);
-                return (
-                  <button
-                    key={feat.id}
-                    onClick={() => toggleServiceFeature(feat.id)}
-                    title={feat.description}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-accent/15 text-accent border border-accent/40"
-                        : "bg-surface-2 text-muted border border-transparent hover:text-foreground"
-                    }`}
-                  >
-                    {active ? "\u2713" : "+"} {feat.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="text-sm text-muted">
-              {snippets[activeUseCase].description}
-            </p>
-            <p className="text-xs text-subtle font-mono">
-              {snippets[activeUseCase].flow}
-            </p>
-            <CodeBlock tabs={snippets[activeUseCase].snippets} />
-          </div>
-
-          {/* Agent operator snippets */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Cpu size={20} className="text-accent" />
-              <h2 className="text-3xl font-bold">How to Use Your Agent</h2>
-            </div>
-            <p className="text-sm text-muted">
-              If you are the <strong className="text-foreground">agent operator</strong>, use these snippets to
-              authenticate your agent with services or submit on-chain transactions.
-              Set <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded text-xs">AGENT_PRIVATE_KEY</code> in
-              your agent&apos;s environment first.
-            </p>
-
-            <div className="flex gap-2 flex-wrap">
-              {agentSnippets.map((snippet, i) => (
-                <button
-                  key={snippet.title}
-                  onClick={() => setActiveAgentSnippet(i)}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                    i === activeAgentSnippet
-                      ? "bg-gradient-to-r from-accent to-accent-2 text-white border-transparent"
-                      : "bg-surface-1 text-foreground border-border hover:bg-surface-2"
-                  }`}
-                >
-                  {snippet.title}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-1.5 flex-wrap">
-              {AGENT_FEATURES.map((feat) => {
-                const active = activeAgentFeatures.has(feat.id);
-                return (
-                  <button
-                    key={feat.id}
-                    onClick={() => toggleAgentFeature(feat.id)}
-                    title={feat.description}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-accent/15 text-accent border border-accent/40"
-                        : "bg-surface-2 text-muted border border-transparent hover:text-foreground"
-                    }`}
-                  >
-                    {active ? "\u2713" : "+"} {feat.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <p className="text-sm text-muted">
-              {agentSnippets[activeAgentSnippet].description}
-            </p>
-            <CodeBlock tabs={agentSnippets[activeAgentSnippet].snippets} />
-          </div>
+          </Card>
         </div>
       </section>
 
@@ -358,6 +188,40 @@ export default function ExplainerPage() {
 
           {/* Four modes - 2x2 grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            {/* Agent Identity */}
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="w-8 h-8 rounded-full bg-accent-2/20 flex items-center justify-center">
+                  <Key size={16} className="text-accent-2" />
+                </span>
+                <h3 className="font-bold text-lg">Agent Identity</h3>
+                <Badge variant="success">recommended</Badge>
+              </div>
+              <p className="text-sm font-medium mb-2">
+                Independent Agent Key
+              </p>
+              <p className="text-sm text-muted mb-4">
+                The agent generates its own keypair. During registration, the agent
+                signs a challenge proving it controls the key. The human proves humanity
+                via Self, and the agent proves key ownership via ECDSA &mdash; both in
+                a single QR scan.
+              </p>
+              <div className="space-y-2 text-sm text-muted">
+                <p className="font-bold text-foreground">How it&apos;s secured:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>ECDSA signature in registration proves agent key ownership</li>
+                  <li>ZK proof binds human identity to nullifier</li>
+                  <li>Agent signs requests with its <em>own</em> key &mdash; human wallet never exposed</li>
+                </ul>
+              </div>
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted">
+                  <strong className="text-foreground">Best for:</strong> Multiple agents per user, key rotation,
+                  delegation, autonomous agents that operate independently.
+                </p>
+              </div>
+            </Card>
+
             {/* Verified Wallet */}
             <Card>
               <div className="flex items-center gap-2 mb-4">
@@ -387,39 +251,6 @@ export default function ExplainerPage() {
                   <strong className="text-foreground">Best for:</strong> Single agent per user, quick setup, on-chain
                   gating where <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">msg.sender</code> is
                   the agent.
-                </p>
-              </div>
-            </Card>
-
-            {/* Agent Identity */}
-            <Card>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="w-8 h-8 rounded-full bg-accent-2/20 flex items-center justify-center">
-                  <Key size={16} className="text-accent-2" />
-                </span>
-                <h3 className="font-bold text-lg">Agent Identity</h3>
-              </div>
-              <p className="text-sm font-medium mb-2">
-                Independent Agent Key
-              </p>
-              <p className="text-sm text-muted mb-4">
-                The agent generates its own keypair. During registration, the agent
-                signs a challenge proving it controls the key. The human proves humanity
-                via Self, and the agent proves key ownership via ECDSA, both in
-                a single QR scan.
-              </p>
-              <div className="space-y-2 text-sm text-muted">
-                <p className="font-bold text-foreground">How it&apos;s secured:</p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>ECDSA signature in registration proves agent key ownership</li>
-                  <li>ZK proof binds human identity to nullifier</li>
-                  <li>Agent signs requests with its <em>own</em> key. Human wallet never exposed</li>
-                </ul>
-              </div>
-              <div className="mt-4 pt-4 border-t border-border">
-                <p className="text-xs text-muted">
-                  <strong className="text-foreground">Best for:</strong> Multiple agents per user, key rotation,
-                  delegation, autonomous agents that operate independently.
                 </p>
               </div>
             </Card>
@@ -548,9 +379,11 @@ export default function ExplainerPage() {
               <p className="text-muted mt-3">
                 <strong className="text-foreground">Fully composable.</strong> SDKs are available for{" "}
                 <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">TypeScript</code>,{" "}
-                <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">Python</code>, and raw implementations in any language.
-                Sign requests in Python, verify in TypeScript, or vice versa. The signing
-                protocol is language-agnostic. All SDKs produce identical signatures.
+                <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">Python</code>, and{" "}
+                <code className="bg-surface-2 font-mono text-accent-2 px-1 rounded">Rust</code>, with the signing
+                protocol open for raw implementations in any language.
+                Sign requests in Python, verify in Rust, or vice versa. The signing
+                protocol is language-agnostic &mdash; all SDKs produce identical signatures.
               </p>
             </div>
 
@@ -638,7 +471,8 @@ export default function ExplainerPage() {
             </p>
             <pre className="bg-surface-2 border border-border rounded-lg p-4 text-xs overflow-auto mb-4">
 {`// Quick check: Only accept passport-verified agents
-const res = await fetch(\`https://selfagentid.xyz/api/reputation/42220/\${agentId}\`);
+const baseUrl = "https://self-agent-id.vercel.app"; // replace with your deployment URL
+const res = await fetch(\`\${baseUrl}/api/reputation/42220/\${agentId}\`);
 const { score, proofType } = await res.json();
 
 if (score < 100) {
@@ -686,68 +520,6 @@ require(score >= 80, "Insufficient verification");`}</pre>
                 </div>
               </div>
             </div>
-          </Card>
-        </div>
-      </section>
-
-      {/* ───────────────────────── 5. Live Demo ───────────────────────── */}
-      <section id="demo" className="bg-surface-1 px-6 py-20">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-4">Live Demo</h2>
-          <p className="text-center text-muted mb-10">
-            Register a new agent or verify an existing one on Celo.
-          </p>
-
-          <div className="flex justify-center mb-10">
-            <Link href="/register">
-              <Button variant="primary" size="lg">Register an Agent</Button>
-            </Link>
-          </div>
-
-          {/* Inline verify widget */}
-          <Card>
-            <div className="flex items-center gap-2 mb-4">
-              <Search size={18} className="text-accent" />
-              <h3 className="font-bold text-lg">Verify an Agent</h3>
-            </div>
-            <p className="text-sm text-muted mb-4">
-              Paste an agent address or bytes32 key to check its on-chain status.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
-              <input
-                type="text"
-                placeholder="0x... (address or bytes32)"
-                value={pubKeyInput}
-                onChange={(e) => {
-                  setPubKeyInput(e.target.value);
-                  setVerifyStatus("idle");
-                }}
-                className="flex-1 px-4 py-3 bg-surface-2 border border-border rounded-lg text-sm font-mono focus:border-accent"
-              />
-              <Button
-                onClick={handleVerify}
-                disabled={verifyStatus === "loading"}
-                variant="primary"
-              >
-                {verifyStatus === "loading" ? "Checking..." : "Verify"}
-              </Button>
-            </div>
-
-            {verifyStatus === "verified" && (
-              <div className="bg-accent-success/10 border border-accent-success/20 text-accent-success rounded-lg px-4 py-3 text-sm">
-                Verified. This agent is registered and human-backed.
-              </div>
-            )}
-            {verifyStatus === "not-registered" && (
-              <div className="bg-accent-warn/10 border border-accent-warn/20 text-accent-warn rounded-lg px-4 py-3 text-sm">
-                Not registered. This public key has no verified agent entry.
-              </div>
-            )}
-            {verifyStatus === "error" && (
-              <div className="bg-accent-error/10 border border-accent-error/20 text-accent-error rounded-lg px-4 py-3 text-sm">
-                Error: {verifyError}
-              </div>
-            )}
           </Card>
         </div>
       </section>

@@ -4,9 +4,11 @@
 //!
 //! ## Agent side (signing requests)
 //!
-//! ```ignore
+//! ```no_run
 //! use self_agent_sdk::{SelfAgent, SelfAgentConfig, NetworkName};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # tokio::runtime::Runtime::new()?.block_on(async {
 //! let agent = SelfAgent::new(SelfAgentConfig {
 //!     private_key: "0x...".to_string(),
 //!     network: Some(NetworkName::Testnet),
@@ -19,23 +21,39 @@
 //!
 //! // Auto-signed HTTP request
 //! let response = agent.fetch("https://api.example.com/data", None, None).await?;
+//! # let _ = (registered, response);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # })?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Service side (verifying requests)
 //!
-//! ```ignore
+//! ```no_run
 //! use self_agent_sdk::{SelfAgentVerifier, VerifierConfig};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # tokio::runtime::Runtime::new()?.block_on(async {
 //! let mut verifier = SelfAgentVerifier::new(VerifierConfig::default());
+//! let signature = "0x...";
+//! let timestamp = "1700000000000";
+//! let body = r#"{"test":true}"#;
 //! let result = verifier.verify(signature, timestamp, "POST", "/api/data", Some(body)).await;
 //! if result.valid {
 //!     println!("Verified agent: {:?}", result.agent_address);
 //! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # })?;
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod agent;
 pub mod agent_card;
 pub mod constants;
+pub mod registration;
+pub mod registration_flow;
 pub mod verifier;
 
 #[cfg(feature = "axum")]
@@ -48,7 +66,21 @@ pub use agent_card::{
     get_provider_label, get_strength_color,
 };
 pub use constants::{headers, NetworkName};
-pub use verifier::{AgentCredentials, SelfAgentVerifier, VerificationResult, VerifierConfig};
+pub use registration::{
+    RegistrationDisclosures, SignatureParts, SignedRegistrationChallenge,
+    build_advanced_deregister_user_data_ascii, build_advanced_register_user_data_ascii,
+    build_simple_deregister_user_data_ascii, build_simple_register_user_data_ascii,
+    build_wallet_free_register_user_data_ascii, compute_registration_challenge_hash,
+    get_registration_config_index, sign_registration_challenge,
+};
+pub use registration_flow::{
+    DeregistrationRequest, DeregistrationSession, RegistrationError, RegistrationRequest,
+    RegistrationResult, RegistrationSession,
+};
+pub use verifier::{
+    AgentCredentials, RateLimitConfig, SelfAgentVerifier, VerificationResult, VerifierBuilder,
+    VerifierConfig, VerifierFromConfig,
+};
 
 #[cfg(feature = "axum")]
 pub use middleware::{self_agent_auth, VerifiedAgent};

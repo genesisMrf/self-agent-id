@@ -110,14 +110,14 @@ contract SelfAgentRegistryTest is Test {
 
     function _registerViaHub(address humanAddr, uint256 nullifier) internal {
         bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52); // 'R'
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, userData);
     }
 
     function _deregisterViaHub(address humanAddr, uint256 nullifier) internal {
         bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
-        bytes memory userData = _buildUserData(0x02);
+        bytes memory userData = _buildUserData(0x44); // 'D'
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, userData);
     }
@@ -169,7 +169,7 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RegisterAgent_EmitsEvent() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52);
 
         vm.expectEmit(true, true, false, true);
         emit IERC8004ProofOfHuman.AgentRegisteredWithHumanProof(
@@ -223,7 +223,7 @@ contract SelfAgentRegistryTest is Test {
         _registerViaHub(human1, nullifier1);
 
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52);
 
         vm.prank(hubMock);
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.AgentAlreadyRegistered.selector, agentKey1));
@@ -250,7 +250,7 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_CallerNotHub() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52);
 
         vm.prank(human1); // not the hub
         vm.expectRevert(); // UnauthorizedCaller from SelfVerificationRoot
@@ -282,7 +282,7 @@ contract SelfAgentRegistryTest is Test {
         _registerViaHub(human1, nullifier1);
 
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x02);
+        bytes memory userData = _buildUserData(0x44);
 
         vm.expectEmit(true, false, false, true);
         emit IERC8004ProofOfHuman.HumanProofRevoked(1, nullifier1);
@@ -308,7 +308,7 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_DeregisterUnregisteredAgent() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x02);
+        bytes memory userData = _buildUserData(0x44);
 
         vm.prank(hubMock);
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.AgentNotRegistered.selector, agentKey1));
@@ -322,7 +322,7 @@ contract SelfAgentRegistryTest is Test {
         // is derived from address, human2's deregister targets their OWN key
         // (which doesn't exist). This should revert as AgentNotRegistered.
         bytes memory encodedOutput = _buildEncodedOutput(human2, nullifier2);
-        bytes memory userData = _buildUserData(0x02);
+        bytes memory userData = _buildUserData(0x44);
 
         vm.prank(hubMock);
         vm.expectRevert(
@@ -338,7 +338,7 @@ contract SelfAgentRegistryTest is Test {
         // Same address (human1) but different nullifier tries to deregister
         // This simulates a different passport owner using the same wallet
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier2);
-        bytes memory userData = _buildUserData(0x02);
+        bytes memory userData = _buildUserData(0x44);
 
         vm.prank(hubMock);
         vm.expectRevert(
@@ -475,7 +475,7 @@ contract SelfAgentRegistryTest is Test {
         bytes memory providerData = abi.encodePacked(agentKey1);
 
         vm.prank(human1);
-        vm.expectRevert("Human proof verification failed");
+        vm.expectRevert(SelfAgentRegistry.VerificationFailed.selector);
         registry.registerWithHumanProof("", address(mockProvider), "", providerData);
     }
 
@@ -483,7 +483,7 @@ contract SelfAgentRegistryTest is Test {
         mockProvider.setNextNullifier(nullifier1);
 
         vm.prank(human1);
-        vm.expectRevert("Provider data must contain agent public key");
+        vm.expectRevert(SelfAgentRegistry.ProviderDataTooShort.selector);
         registry.registerWithHumanProof("", address(mockProvider), "", "");
     }
 
@@ -524,7 +524,7 @@ contract SelfAgentRegistryTest is Test {
         // human2 tries to revoke (different nullifier)
         mockProvider.setNextNullifier(nullifier2);
         vm.prank(human2);
-        vm.expectRevert("Not the same human");
+        vm.expectRevert(SelfAgentRegistry.NotSameHuman.selector);
         registry.revokeHumanProof(agentId, address(mockProvider), "", "");
     }
 
@@ -674,10 +674,10 @@ contract SelfAgentRegistryTest is Test {
 
         _registerViaHub(humanAddr, nullifier);
 
-        bytes32 agentPubKey = _agentKeyFor(humanAddr);
-        uint256 agentId = registry.getAgentId(agentPubKey);
+        bytes32 agentKey = _agentKeyFor(humanAddr);
+        uint256 agentId = registry.getAgentId(agentKey);
         assertTrue(agentId != 0);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        assertTrue(registry.isVerifiedAgent(agentKey));
         assertEq(registry.ownerOf(agentId), humanAddr);
         assertEq(registry.getHumanNullifier(agentId), nullifier);
     }
@@ -687,12 +687,12 @@ contract SelfAgentRegistryTest is Test {
         vm.assume(nullifier != 0);
 
         _registerViaHub(humanAddr, nullifier);
-        bytes32 agentPubKey = _agentKeyFor(humanAddr);
-        uint256 agentId = registry.getAgentId(agentPubKey);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        bytes32 agentKey = _agentKeyFor(humanAddr);
+        uint256 agentId = registry.getAgentId(agentKey);
+        assertTrue(registry.isVerifiedAgent(agentKey));
 
         _deregisterViaHub(humanAddr, nullifier);
-        assertFalse(registry.isVerifiedAgent(agentPubKey));
+        assertFalse(registry.isVerifiedAgent(agentKey));
         assertFalse(registry.hasHumanProof(agentId));
     }
 
@@ -704,38 +704,48 @@ contract SelfAgentRegistryTest is Test {
         uint256 privKey,
         address humanAddr
     ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
+        address agentAddr = vm.addr(privKey);
+        uint256 nonce = registry.agentNonces(agentAddr);
         bytes32 messageHash = keccak256(abi.encodePacked(
             "self-agent-id:register:",
             humanAddr,
             block.chainid,
-            address(registry)
+            address(registry),
+            nonce
         ));
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (v, r, s) = vm.sign(privKey, ethSignedHash);
     }
 
     function _buildAdvancedUserData(
-        uint8 action,
         address agentAddr,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) internal pure returns (bytes memory) {
-        return abi.encodePacked(action, uint8(0), agentAddr, r, s, v);
+        // "K" + config(1) + address(40 hex) + r(64 hex) + s(64 hex) + v(2 hex) = 172 chars
+        return abi.encodePacked(
+            "K0",
+            _toHexString(agentAddr),
+            _toHexString32(r),
+            _toHexString32(s),
+            _toHexString8(v)
+        );
     }
 
     function _registerViaHubAdvanced(address humanAddr, uint256 nullifier, uint256 agentPrivKey) internal {
         address agentAddr = vm.addr(agentPrivKey);
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(agentPrivKey, humanAddr);
         bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
-        bytes memory userData = _buildAdvancedUserData(0x03, agentAddr, v, r, s);
+        bytes memory userData = _buildAdvancedUserData(agentAddr, v, r, s);
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, userData);
     }
 
     function _deregisterViaHubAdvanced(address humanAddr, uint256 nullifier, address agentAddr) internal {
         bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
-        bytes memory userData = abi.encodePacked(uint8(0x04), uint8(0), agentAddr);
+        // "X" + config(1) + address(40 hex) = 42 chars
+        bytes memory userData = abi.encodePacked("X0", _toHexString(agentAddr));
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, userData);
     }
@@ -798,11 +808,45 @@ contract SelfAgentRegistryTest is Test {
         assertGt(secondId, firstId);
     }
 
+    function test_RevertWhen_ReplayAttackAfterDeregister() public {
+        // Capture the signature at nonce 0
+        (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey1, human1);
+        bytes memory oldUserData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
+
+        // Register (consumes nonce 0) then deregister
+        bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(encodedOutput, oldUserData);
+        assertTrue(registry.isVerifiedAgent(advAgentKey1));
+        assertEq(registry.agentNonces(advAgentAddr1), 1, "Nonce should be 1 after registration");
+
+        _deregisterViaHubAdvanced(human1, nullifier1, advAgentAddr1);
+        assertFalse(registry.isVerifiedAgent(advAgentKey1));
+
+        // Replay the old signature — should fail because nonce is now 1
+        vm.prank(hubMock);
+        vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
+        registry.onVerificationSuccess(encodedOutput, oldUserData);
+    }
+
+    function test_NonceIncrementsOnRegistration() public {
+        assertEq(registry.agentNonces(advAgentAddr1), 0);
+
+        _registerViaHubAdvanced(human1, nullifier1, advAgentPrivKey1);
+        assertEq(registry.agentNonces(advAgentAddr1), 1);
+
+        _deregisterViaHubAdvanced(human1, nullifier1, advAgentAddr1);
+
+        // Re-register with fresh signature (nonce 1)
+        _registerViaHubAdvanced(human1, nullifier1, advAgentPrivKey1);
+        assertEq(registry.agentNonces(advAgentAddr1), 2);
+    }
+
     function test_RevertWhen_AdvancedWrongSignature() public {
         // Agent 2 signs, but we claim it's agent 1
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey2, human1);
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildAdvancedUserData(0x03, advAgentAddr1, v, r, s);
+        bytes memory userData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
@@ -813,7 +857,7 @@ contract SelfAgentRegistryTest is Test {
         // Agent signs for human1, but proof is for human2
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey1, human1);
         bytes memory encodedOutput = _buildEncodedOutput(human2, nullifier2);
-        bytes memory userData = _buildAdvancedUserData(0x03, advAgentAddr1, v, r, s);
+        bytes memory userData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
@@ -822,8 +866,8 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_AdvancedUserDataTooShort() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        // Only 11 bytes — too short for binary advanced (needs 87)
-        bytes memory userData = abi.encodePacked(uint8(0x03), uint8(0), bytes9(0));
+        // Too short for advanced register (needs 172 chars)
+        bytes memory userData = abi.encodePacked("K0", bytes9(0));
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
@@ -899,14 +943,21 @@ contract SelfAgentRegistryTest is Test {
     // ====================================================
 
     function _buildWalletFreeUserData(
-        uint8 action,
         address agentAddr,
         address guardian,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) internal pure returns (bytes memory) {
-        return abi.encodePacked(action, uint8(0), agentAddr, guardian, r, s, v);
+        // "W" + config(1) + agentAddr(40 hex) + guardian(40 hex) + r(64 hex) + s(64 hex) + v(2 hex) = 212 chars
+        return abi.encodePacked(
+            "W0",
+            _toHexString(agentAddr),
+            _toHexString(guardian),
+            _toHexString32(r),
+            _toHexString32(s),
+            _toHexString8(v)
+        );
     }
 
     function _registerWalletFree(
@@ -918,7 +969,7 @@ contract SelfAgentRegistryTest is Test {
         address agentAddr = vm.addr(agentPrivKey);
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(agentPrivKey, humanAddr);
         bytes memory encodedOutput = _buildEncodedOutput(humanAddr, nullifier);
-        bytes memory userData = _buildWalletFreeUserData(0x05, agentAddr, guardian, v, r, s);
+        bytes memory userData = _buildWalletFreeUserData(agentAddr, guardian, v, r, s);
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, userData);
     }
@@ -956,7 +1007,7 @@ contract SelfAgentRegistryTest is Test {
         address agentAddr = vm.addr(advAgentPrivKey1);
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey1, human1);
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildWalletFreeUserData(0x05, agentAddr, human1, v, r, s);
+        bytes memory userData = _buildWalletFreeUserData(agentAddr, human1, v, r, s);
 
         vm.expectEmit(true, true, false, false);
         emit SelfAgentRegistry.GuardianSet(1, human1);
@@ -988,7 +1039,8 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_WalletFreeUserDataTooShort() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = abi.encodePacked(uint8(0x05), uint8(0), bytes20(0));
+        // Too short for wallet-free register (needs 212 chars)
+        bytes memory userData = abi.encodePacked("W0", bytes20(0));
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
@@ -999,7 +1051,7 @@ contract SelfAgentRegistryTest is Test {
         // Agent 2 signs, but we claim it's agent 1
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey2, human1);
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildWalletFreeUserData(0x05, advAgentAddr1, human1, v, r, s);
+        bytes memory userData = _buildWalletFreeUserData(advAgentAddr1, human1, v, r, s);
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
@@ -1213,10 +1265,10 @@ contract SelfAgentRegistryTest is Test {
 
         _registerWalletFree(humanAddr, nullifier, agentPrivKey, humanAddr);
 
-        bytes32 agentPubKey = bytes32(uint256(uint160(agentAddr)));
-        uint256 agentId = registry.getAgentId(agentPubKey);
+        bytes32 agentKey = bytes32(uint256(uint160(agentAddr)));
+        uint256 agentId = registry.getAgentId(agentKey);
         assertTrue(agentId != 0);
-        assertTrue(registry.isVerifiedAgent(agentPubKey));
+        assertTrue(registry.isVerifiedAgent(agentKey));
         assertEq(registry.ownerOf(agentId), agentAddr);
         assertEq(registry.agentGuardian(agentId), humanAddr);
     }
@@ -1298,7 +1350,7 @@ contract SelfAgentRegistryTest is Test {
 
     function test_Credentials_EmitEvent() public {
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52);
 
         vm.expectEmit(true, false, false, false);
         emit SelfAgentRegistry.AgentCredentialsStored(1);
@@ -1365,8 +1417,8 @@ contract SelfAgentRegistryTest is Test {
     }
 
     function test_MultiConfig_BinaryConfigByte() public view {
-        // Binary: action 0x01, config 0x04
-        bytes memory data = abi.encodePacked(uint8(0x01), uint8(0x04));
+        // getConfigId accepts binary config bytes (0x00-0x05) at position [1]
+        bytes memory data = abi.encodePacked(uint8(0x52), uint8(0x04));
         bytes32 result = registry.getConfigId(0, 0, data);
         assertEq(result, registry.configIds(4));
     }
@@ -1455,14 +1507,14 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_Binary6OutOfRange() public {
         // Binary 0x06 is out of range — should revert
-        bytes memory data = abi.encodePacked(uint8(0x01), uint8(0x06));
+        bytes memory data = abi.encodePacked(uint8(0x52), uint8(0x06));
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x06)));
         registry.getConfigId(0, 0, data);
     }
 
     function test_RevertWhen_HighByteOutOfRange() public {
         // 0xFF is out of both ASCII and binary range — should revert
-        bytes memory data = abi.encodePacked(uint8(0x01), uint8(0xFF));
+        bytes memory data = abi.encodePacked(uint8(0x52), uint8(0xFF));
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0xFF)));
         registry.getConfigId(0, 0, data);
     }
@@ -1470,7 +1522,7 @@ contract SelfAgentRegistryTest is Test {
     function test_MultiConfig_BinaryAllConfigs() public view {
         // Verify all 6 binary config bytes (0x00-0x05) map correctly
         for (uint8 i = 0; i <= 5; i++) {
-            bytes memory data = abi.encodePacked(uint8(0x01), i);
+            bytes memory data = abi.encodePacked(uint8(0x52), i); // 'R' + binary config
             bytes32 result = registry.getConfigId(0, 0, data);
             assertEq(result, registry.configIds(i), "Binary config mismatch");
         }
@@ -1498,20 +1550,20 @@ contract SelfAgentRegistryTest is Test {
         assertFalse(registry.isVerifiedAgent(agentKey1));
     }
 
-    function test_MultiConfig_BinaryDeregisterAdvancedWithConfig() public {
-        // Register advanced, then deregister with binary 0x04 + config byte
+    function test_MultiConfig_DeregisterAdvancedWithConfig() public {
+        // Register advanced with "K0", then deregister with "X0"
         (uint8 v, bytes32 r, bytes32 s) = _signRegistration(advAgentPrivKey1, human1);
-        bytes memory regData = abi.encodePacked(uint8(0x03), uint8(0x00), advAgentAddr1, r, s, v);
-        assertEq(regData.length, 87);
+        bytes memory regData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
+        assertEq(regData.length, 172);
 
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, regData);
         assertTrue(registry.isVerifiedAgent(advAgentKey1));
 
-        // Deregister: 0x04 + config(1B) + address(20B) = 22 bytes
-        bytes memory deregData = abi.encodePacked(uint8(0x04), uint8(0x00), advAgentAddr1);
-        assertEq(deregData.length, 22);
+        // Deregister: "X0" + address(40 hex) = 42 chars
+        bytes memory deregData = abi.encodePacked("X0", _toHexString(advAgentAddr1));
+        assertEq(deregData.length, 42);
 
         vm.prank(hubMock);
         registry.onVerificationSuccess(encodedOutput, deregData);
@@ -1557,34 +1609,34 @@ contract SelfAgentRegistryTest is Test {
         assertTrue(registry.isVerifiedAgent(agentKey2));
     }
 
-    function test_MultiConfig_BinaryRegisterTooShort() public {
-        // Binary advanced with only 86 bytes (missing 1 byte) should revert
+    function test_MultiConfig_AdvancedRegisterTooShort() public {
+        // Advanced register with only 171 chars (missing 1 char, needs 172) should revert
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory tooShort = new bytes(86);
-        tooShort[0] = bytes1(uint8(0x03));
-        tooShort[1] = bytes1(uint8(0x00));
+        bytes memory tooShort = new bytes(171);
+        tooShort[0] = bytes1(uint8(0x4B)); // 'K'
+        tooShort[1] = bytes1(uint8(0x30)); // '0'
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
         registry.onVerificationSuccess(encodedOutput, tooShort);
     }
 
-    function test_MultiConfig_BinaryWalletFreeTooShort() public {
-        // Binary wallet-free with only 106 bytes (missing 1 byte) should revert
+    function test_MultiConfig_WalletFreeTooShort() public {
+        // Wallet-free with only 211 chars (missing 1 char, needs 212) should revert
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory tooShort = new bytes(106);
-        tooShort[0] = bytes1(uint8(0x05));
-        tooShort[1] = bytes1(uint8(0x00));
+        bytes memory tooShort = new bytes(211);
+        tooShort[0] = bytes1(uint8(0x57)); // 'W'
+        tooShort[1] = bytes1(uint8(0x30)); // '0'
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
         registry.onVerificationSuccess(encodedOutput, tooShort);
     }
 
-    function test_MultiConfig_BinaryDeregAdvancedTooShort() public {
-        // Binary advanced deregister with only 21 bytes (missing 1 byte) should revert
+    function test_MultiConfig_DeregAdvancedTooShort() public {
+        // Advanced deregister with only 41 chars (missing 1 char, needs 42) should revert
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory tooShort = new bytes(21);
-        tooShort[0] = bytes1(uint8(0x04));
-        tooShort[1] = bytes1(uint8(0x00));
+        bytes memory tooShort = new bytes(41);
+        tooShort[0] = bytes1(uint8(0x58)); // 'X'
+        tooShort[1] = bytes1(uint8(0x30)); // '0'
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
         registry.onVerificationSuccess(encodedOutput, tooShort);
@@ -1593,7 +1645,7 @@ contract SelfAgentRegistryTest is Test {
     function test_RevertWhen_GapBetweenBinaryAndASCII() public {
         // Bytes 0x06-0x2F fall between binary (0-5) and ASCII ('0'=0x30)
         // All should revert with InvalidConfigIndex
-        bytes memory data06 = abi.encodePacked(uint8(0x01), uint8(0x06));
+        bytes memory data06 = abi.encodePacked(uint8(0x52), uint8(0x06));
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.InvalidConfigIndex.selector, uint8(0x06)));
         registry.getConfigId(0, 0, data06);
     }
@@ -1694,17 +1746,19 @@ contract SelfAgentRegistryTest is Test {
 
     function test_RevertWhen_AdvancedSignatureWrongChain() public {
         // Sign with a different chainId by manually constructing the wrong hash
+        uint256 nonce = registry.agentNonces(advAgentAddr1);
         bytes32 wrongHash = keccak256(abi.encodePacked(
             "self-agent-id:register:",
             human1,
             uint256(999), // wrong chain ID
-            address(registry)
+            address(registry),
+            nonce
         ));
         bytes32 ethSigned = MessageHashUtils.toEthSignedMessageHash(wrongHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(advAgentPrivKey1, ethSigned);
 
         bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
-        bytes memory userData = _buildAdvancedUserData(0x03, advAgentAddr1, v, r, s);
+        bytes memory userData = _buildAdvancedUserData(advAgentAddr1, v, r, s);
 
         vm.prank(hubMock);
         vm.expectRevert(SelfAgentRegistry.InvalidAgentSignature.selector);
@@ -1731,7 +1785,7 @@ contract SelfAgentRegistryTest is Test {
 
         // Second agent for same human should fail
         bytes memory encodedOutput = _buildEncodedOutput(human1alt, nullifier1);
-        bytes memory userData = _buildUserData(0x01);
+        bytes memory userData = _buildUserData(0x52);
 
         vm.prank(hubMock);
         vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.TooManyAgentsForHuman.selector, nullifier1, uint256(1)));

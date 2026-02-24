@@ -16,7 +16,6 @@ const geistMono = localFont({
   variable: "--font-geist-mono",
 });
 
-
 export const metadata: Metadata = {
   title: "Self Agent ID",
   description: "Register AI agents with proof-of-human via Self Protocol",

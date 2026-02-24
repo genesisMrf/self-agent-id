@@ -55,40 +55,35 @@ function needsCreds(f: Set<string>): boolean {
 // Service-side builders
 // ============================================================
 
-function buildServiceTS(f: Set<string>): string {
-  const creds = needsCreds(f);
-  const sybil = f.has("sybil");
-
-  let verifierOpts = "";
-  if (sybil) {
-    verifierOpts = `{\n  maxAgentsPerHuman: 5,\n}`;
-  }
-
+function buildServiceTS(
+  f: Set<string>,
+  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
+  rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
+): string {
+  const regAge = f.has("regAge");
+  const needsEthers = regAge;
   const rateLimit = f.has("rateLimit");
 
+  // Build chainable verifier lines
+  const builderLines: string[] = [];
+  if (f.has("age18")) builderLines.push("  .requireAge(18)");
+  if (f.has("age21")) builderLines.push("  .requireAge(21)");
+  if (f.has("ofac")) builderLines.push("  .requireOFAC()");
+  if (f.has("sybil")) builderLines.push("  .sybilLimit(5)");
+  if (rateLimit) builderLines.push("  .rateLimit({ perMinute: 10 })");
+
+  const verifierDecl = builderLines.length
+    ? `const verifier = SelfAgentVerifier.create()\n${builderLines.join("\n")}\n  .build();`
+    : `const verifier = SelfAgentVerifier.create().build();`;
+
+  // Build handler body — credential checks handled by builder, only reads remain
   let body = `  console.log("Verified agent:", req.agent.address);`;
 
-  if (rateLimit) {
-    body += `\n\n  // Rate limit: 10 requests per agent per minute
-  const key = \`rate:\${req.agent.address}\`;
-  const count = (rateLimiter.get(key) ?? 0) + 1;
-  rateLimiter.set(key, count);
-  setTimeout(() => rateLimiter.set(key, (rateLimiter.get(key) ?? 1) - 1), 60_000);
-  if (count > 10) return res.status(429).json({ error: "Rate limit exceeded" });`;
-  }
-
-  if (creds) {
-    body += `\n\n  // Read ZK-attested credentials
-  const creds = await req.agent.getCredentials();`;
-  }
-  if (f.has("age18")) {
-    body += `\n  if (creds.olderThan < 18) return res.status(403).json({ error: "Must be 18+" });`;
-  }
-  if (f.has("age21")) {
-    body += `\n  if (creds.olderThan < 21) return res.status(403).json({ error: "Must be 21+" });`;
-  }
-  if (f.has("ofac")) {
-    body += `\n  if (!creds.ofac) return res.status(403).json({ error: "OFAC check failed" });`;
+  // Credential reads (display only — validation is done by the builder)
+  const needsCredRead = f.has("nationality") || f.has("issuingState") || f.has("credentials");
+  if (needsCredRead) {
+    body += `\n\n  // Read ZK-attested credentials (validation handled by the builder)
+  const creds = req.agent.credentials;`;
   }
   if (f.has("nationality")) {
     body += `\n  console.log("Nationality:", creds.nationality);`;
@@ -99,28 +94,38 @@ function buildServiceTS(f: Set<string>): string {
   if (f.has("credentials")) {
     body += `\n  console.log("All credentials:", creds);`;
   }
-  if (f.has("regAge")) {
-    body += `\n\n  // Reject agents registered less than 7 days ago
-  if (req.agent.registeredAt > Date.now() - 7 * 24 * 3600 * 1000) {
+  if (regAge) {
+    body += `\n\n  // Reject agents registered less than ~7 days ago (by block age)
+  const registeredAt = await registry.agentRegisteredAt(req.agent.agentId);
+  const currentBlock = await provider.getBlockNumber();
+  const minBlocks = Math.floor((7 * 24 * 60 * 60) / 5); // ~5s blocks
+  if (currentBlock - Number(registeredAt) < minBlocks) {
     return res.status(403).json({ error: "Agent too new" });
   }`;
   }
 
   body += `\n\n  res.json({ ok: true });`;
 
-  const asyncKw = creds ? "async " : "";
-
-  let rateLimiterDecl = "";
-  if (rateLimit) {
-    rateLimiterDecl = `\nconst rateLimiter = new Map<string, number>();\n`;
-  }
+  const asyncKw = regAge ? "async " : "";
 
   return `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
+${needsEthers ? `import { ethers } from "ethers";` : ""}
 import express from "express";
 
 const app = express();
-const verifier = new SelfAgentVerifier(${verifierOpts});${rateLimiterDecl}
-
+app.use(express.json({
+  verify: (req: any, _res: any, buf: any) => {
+    req.rawBody = typeof buf === "string" ? buf : buf.toString("utf8");
+  },
+}));
+${verifierDecl}
+${regAge ? `
+const provider = new ethers.JsonRpcProvider("${rpcUrl}");
+const registry = new ethers.Contract(
+  "${registryAddress}",
+  ["function agentRegisteredAt(uint256) view returns (uint256)"],
+  provider,
+);` : ""}
 app.use("/api", verifier.auth());
 
 app.post("/api/data", ${asyncKw}(req, res) => {
@@ -129,53 +134,40 @@ ${body}
 }
 
 function buildServicePythonSDK(f: Set<string>): string {
-  const creds = needsCreds(f);
-  const sybil = f.has("sybil");
   const rateLimit = f.has("rateLimit");
 
-  const opts: string[] = [];
-  if (sybil) opts.push("    max_agents_per_human=5,");
-  if (creds) opts.push("    include_credentials=True,");
-  const verifierOpts = opts.length ? `\n${opts.join("\n")}\n` : "";
+  // Build chainable verifier lines
+  const builderLines: string[] = [];
+  if (f.has("age18")) builderLines.push("    .require_age(18)");
+  if (f.has("age21")) builderLines.push("    .require_age(21)");
+  if (f.has("ofac")) builderLines.push("    .require_ofac()");
+  if (f.has("sybil")) builderLines.push("    .sybil_limit(5)");
+  if (rateLimit) builderLines.push("    .rate_limit(per_minute=10)");
 
+  const verifierDecl = builderLines.length
+    ? `verifier = (SelfAgentVerifier.create()\n${builderLines.join("\n")}\n    .build())`
+    : `verifier = SelfAgentVerifier.create().build()`;
+
+  // Build handler body — credential checks handled by builder, only reads remain
   let body = `    print("Verified agent:", g.agent.agent_address)`;
 
-  if (rateLimit) {
-    body += `\n\n    # Rate limit: 10 requests per agent per minute
-    key = g.agent.agent_address.lower()
-    now = time.time()
-    timestamps = rate_limiter.get(key, [])
-    timestamps = [t for t in timestamps if now - t < 60]
-    if len(timestamps) >= 10:
-        return jsonify(error="Rate limit exceeded"), 429
-    timestamps.append(now)
-    rate_limiter[key] = timestamps`;
+  const needsCredRead = f.has("nationality") || f.has("issuingState") || f.has("credentials");
+  if (needsCredRead) {
+    body += `\n\n    # Read ZK-attested credentials (validation handled by the builder)
+    creds = g.agent.credentials`;
   }
-
-  if (creds) {
-    body += `\n\n    creds = g.agent.credentials`;
-    if (f.has("age18")) body += `\n    if creds.older_than < 18:\n        return jsonify(error="Must be 18+"), 403`;
-    if (f.has("age21")) body += `\n    if creds.older_than < 21:\n        return jsonify(error="Must be 21+"), 403`;
-    if (f.has("ofac")) body += `\n    if not creds.ofac[0]:\n        return jsonify(error="OFAC check failed"), 403`;
-    if (f.has("nationality")) body += `\n    print("Nationality:", creds.nationality)`;
-    if (f.has("issuingState")) body += `\n    print("Issuing state:", creds.issuing_state)`;
-    if (f.has("credentials")) body += `\n    print("All credentials:", creds)`;
-  }
+  if (f.has("nationality")) body += `\n    print("Nationality:", creds.nationality)`;
+  if (f.has("issuingState")) body += `\n    print("Issuing state:", creds.issuing_state)`;
+  if (f.has("credentials")) body += `\n    print("All credentials:", creds)`;
 
   body += `\n\n    return jsonify(ok=True)`;
 
-  let rateLimiterDecl = "";
-  if (rateLimit) rateLimiterDecl = `\nrate_limiter: dict[str, list[float]] = {}\n`;
-
-  let imports = `from flask import Flask, g, jsonify
+  return `from flask import Flask, g, jsonify
 from self_agent_sdk import SelfAgentVerifier
-from self_agent_sdk.middleware.flask import require_agent`;
-  if (rateLimit) imports += `\nimport time`;
-
-  return `${imports}
+from self_agent_sdk.middleware.flask import require_agent
 
 app = Flask(__name__)
-verifier = SelfAgentVerifier(${verifierOpts})${rateLimiterDecl}
+${verifierDecl}
 
 @app.route("/api/data", methods=["POST"])
 @require_agent(verifier)
@@ -185,14 +177,18 @@ ${body}`;
 
 function buildServiceRustSDK(f: Set<string>): string {
   const creds = needsCreds(f);
-  const sybil = f.has("sybil");
 
-  const opts: string[] = [];
-  if (sybil) opts.push("        max_agents_per_human: Some(5),");
-  if (creds) opts.push("        include_credentials: Some(true),");
-  const verifierOpts = opts.length
-    ? `\n${opts.join("\n")}\n        ..VerifierConfig::default()\n    `
-    : "VerifierConfig::default()";
+  // Build chainable verifier lines
+  const builderLines: string[] = [];
+  if (f.has("age18")) builderLines.push("        .require_age(18)");
+  if (f.has("age21")) builderLines.push("        .require_age(21)");
+  if (f.has("ofac")) builderLines.push("        .require_ofac()");
+  if (f.has("sybil")) builderLines.push("        .sybil_limit(5)");
+  if (f.has("rateLimit")) builderLines.push("        .rate_limit(RateLimit { per_minute: 10 })");
+
+  const verifierBody = builderLines.length
+    ? `SelfAgentVerifier::create()\n${builderLines.join("\n")}\n        .build()`
+    : `SelfAgentVerifier::create().build()`;
 
   let handler = `    let agent = req.extensions().get::<VerifiedAgent>().unwrap();
     println!("Verified agent: {:?}", agent.address);`;
@@ -200,23 +196,27 @@ function buildServiceRustSDK(f: Set<string>): string {
   if (creds) {
     handler += `
 
-    // Read ZK-attested credentials from verification result
-    // (available when include_credentials is enabled)`;
+    // Read ZK-attested credentials (validation handled by the builder)
+    if let Some(ref creds) = agent.credentials {
+        println!("Credentials: {:?}", creds);
+    }`;
   }
 
   handler += `
 
     Json(serde_json::json!({ "ok": true }))`;
 
+  const needsRateLimit = f.has("rateLimit");
+
   return `use axum::{Router, routing::post, middleware, Json, Extension};
-use self_agent_sdk::{SelfAgentVerifier, VerifierConfig, VerifiedAgent, self_agent_auth};
+use self_agent_sdk::{SelfAgentVerifier, VerifiedAgent, self_agent_auth${needsRateLimit ? ", RateLimit" : ""}};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
     let verifier = Arc::new(Mutex::new(
-        SelfAgentVerifier::new(${verifierOpts})
+        ${verifierBody}
     ));
 
     let app = Router::new()
@@ -272,7 +272,7 @@ function buildAgentAgentPythonSDK(f: Set<string>): string {
 
   return `from self_agent_sdk import SelfAgentVerifier
 
-verifier = SelfAgentVerifier()${myNullifier}
+verifier = SelfAgentVerifier.create().build()${myNullifier}
 
 def verify_peer(headers: dict, method: str, url: str) -> bool:
 ${body}`;
@@ -318,9 +318,9 @@ function buildAgentAgentRustSDK(f: Set<string>): string {
     myNullifier = `\nlet my_nullifier = U256::ZERO; // Set from your own agent info\n`;
   }
 
-  return `use self_agent_sdk::{SelfAgentVerifier, VerifierConfig};
+  return `use self_agent_sdk::SelfAgentVerifier;
 
-let mut verifier = SelfAgentVerifier::new(VerifierConfig::default());${myNullifier}
+let mut verifier = SelfAgentVerifier::create().build();${myNullifier}
 async fn verify_peer(
     verifier: &mut SelfAgentVerifier,
     signature: &str, timestamp: &str,
@@ -332,7 +332,7 @@ ${body}
 
 // ── Agent → Agent builders ──
 
-function buildAgentAgentTS(f: Set<string>, registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
+function buildAgentAgentTS(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
   const mutual = f.has("mutual");
   const sameHuman = f.has("sameHuman");
   const diffHuman = f.has("diffHuman");
@@ -343,7 +343,7 @@ function buildAgentAgentTS(f: Set<string>, registryAddress: string = "0x42CEA1b3
     imports += `\nimport { ethers } from "ethers";`;
   }
 
-  const setup = `const verifier = new SelfAgentVerifier();`;
+  const setup = `const verifier = SelfAgentVerifier.create().build();`;
 
   let verifyBody = `  const result = await verifier.verify({
     signature: req.headers.get("x-self-agent-signature")!,
@@ -407,7 +407,7 @@ ${verifyBody}
 }`;
 }
 
-function buildAgentAgentSolidity(f: Set<string>, registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"): string {
+function buildAgentAgentSolidity(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa"): string {
   const diffHuman = f.has("diffHuman");
   const sameHuman = f.has("sameHuman");
   const mutual = f.has("mutual");
@@ -472,7 +472,7 @@ ${modifier}
 
 // ── Agent → Chain builder ──
 
-function buildAgentChainSolidity(f: Set<string>, registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b"): string {
+function buildAgentChainSolidity(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa"): string {
   const sybil = f.has("sybil");
   const creds = needsCreds(f);
   const regAge = f.has("regAge");
@@ -568,7 +568,7 @@ function buildSignRequestsTS(f: Set<string>): string {
 
 // Check peer status before collaborating
 const { SelfAgentVerifier } = require("@selfxyz/agent-sdk");
-const verifier = new SelfAgentVerifier();`;
+const verifier = SelfAgentVerifier.create().build();`;
   }
   if (sameHuman) {
     extra += `
@@ -620,7 +620,7 @@ function buildSignRequestsRustSDK(f: Set<string>): string {
     extra += `
 
 // Verify peer agents before collaborating
-let mut verifier = SelfAgentVerifier::new(VerifierConfig::default());`;
+let mut verifier = SelfAgentVerifier::create().build();`;
   }
   if (mutual) {
     extra += `
@@ -659,7 +659,7 @@ println!("Agent ID: {:?}, Verified: {}", info.agent_id, info.is_verified);${extr
 
 function buildTestSetupRustSDK(): string {
   return `use self_agent_sdk::{
-    SelfAgent, SelfAgentConfig, SelfAgentVerifier, VerifierConfig, NetworkName,
+    SelfAgent, SelfAgentConfig, SelfAgentVerifier, NetworkName,
     constants::headers,
 };
 
@@ -688,11 +688,10 @@ async fn main() {
     println!("\\n--- Test 2: Local Verify Round-Trip ---");
     let body = r#"{"test":true}"#;
     let hdrs = agent.sign_request("POST", "/api/test", Some(body)).await.unwrap();
-    let mut verifier = SelfAgentVerifier::new(VerifierConfig {
-        network: Some(NetworkName::Testnet),
-        max_agents_per_human: Some(0),
-        ..VerifierConfig::default()
-    });
+    let mut verifier = SelfAgentVerifier::create()
+        .network(NetworkName::Testnet)
+        .sybil_limit(0)
+        .build();
     let result = verifier.verify(
         &hdrs[headers::SIGNATURE],
         &hdrs[headers::TIMESTAMP],
@@ -710,12 +709,12 @@ function buildTestSetupTS(): string {
 import { ethers } from "ethers";
 
 // Celo Sepolia testnet — for mainnet use https://forno.celo.org + mainnet addresses
-const REGISTRY = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b";
+const REGISTRY = "0x29d941856134b1D053AfFF57fa560324510C79fa";
 const RPC = "https://forno.celo-sepolia.celo-testnet.org";
 const DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app";
 const DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app";
-const DEMO_APP = "https://agent-id.self.xyz"; // chain-verify relayer
-const VERIFIER = "0x26e05bF632fb5bACB665ab014240EAC1413dAE35";
+const DEMO_APP = "https://self-agent-id.vercel.app"; // replace with your deployment URL
+const VERIFIER = "0x31A5A1d34728c5e6425594A596997A7Bf4aD607d";
 
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY!,
@@ -815,7 +814,7 @@ from self_agent_sdk import SelfAgent, SelfAgentVerifier
 
 DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app"
 DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app"
-DEMO_APP = "https://agent-id.self.xyz"
+DEMO_APP = "https://self-agent-id.vercel.app"  # replace with your deployment URL
 
 agent = SelfAgent(
     private_key=os.environ["AGENT_PRIVATE_KEY"],
@@ -843,7 +842,7 @@ print(f"Response signed: {'x-self-agent-signature' in res2.headers}")
 
 # Test 3: Local verification round-trip
 print("\\n--- Test 3: Local Verify Round-Trip ---")
-verifier = SelfAgentVerifier(network="testnet", max_agents_per_human=0)
+verifier = SelfAgentVerifier.create().network("testnet").sybil_limit(0).build()
 headers = agent.sign_request("POST", "/api/test", body='{"test":true}')
 result = verifier.verify(
     signature=headers["x-self-agent-signature"],
@@ -983,7 +982,7 @@ contract MyProtocol {
 // ============================================================
 
 export function getServiceSnippets(
-  registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
   rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
   features?: Set<string>,
 ): UseCaseSnippets[] {
@@ -996,7 +995,7 @@ export function getServiceSnippets(
         "Verify that an AI agent calling your API is human-backed. The SDK recovers the signer from the ECDSA signature, checks isVerifiedAgent() on-chain, and optionally reads ZK-attested credentials and enforces sybil limits.",
       flow: "npm install @selfxyz/agent-sdk (or pip install selfxyz-agent-sdk or cargo add self-agent-sdk) \u2192 Create verifier \u2192 Add middleware \u2192 Done",
       snippets: [
-        { label: "TypeScript", language: "typescript", code: buildServiceTS(f) },
+        { label: "TypeScript", language: "typescript", code: buildServiceTS(f, registryAddress, rpcUrl) },
         { label: "Python", language: "python", code: buildServicePythonSDK(f) },
         { label: "Rust", language: "rust", code: buildServiceRustSDK(f) },
       ],
@@ -1026,7 +1025,7 @@ export function getServiceSnippets(
 }
 
 export function getAgentSnippets(
-  registryAddress: string = "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
   rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
   features?: Set<string>,
 ): UseCaseSnippets[] {

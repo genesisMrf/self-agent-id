@@ -289,7 +289,7 @@ interface IHumanProofProvider {
           <pre className="bg-surface-2 border border-border rounded p-3 text-xs overflow-auto">
 {`GET /api/cards/{chainId}/{agentId}  → Agent Card JSON
 GET /api/reputation/{chainId}/{agentId}  → { score, proofType }
-GET /.well-known/a2a/{agentId}  → Redirect to card resolver`}</pre>
+GET /.well-known/a2a/{agentId}?chain={chainId}  → Redirect to card resolver`}</pre>
           <p className="text-xs text-muted mt-3">
             For fully on-chain contexts, the SDK generates <code className="text-accent-2">data:application/json;base64,...</code> URIs.
           </p>
@@ -307,8 +307,8 @@ GET /.well-known/a2a/{agentId}  → Redirect to card resolver`}</pre>
           <p className="text-muted leading-relaxed">
             We&apos;ve built a complete reference implementation using{" "}
             <a href="https://self.xyz" target="_blank" rel="noopener noreferrer" className="text-foreground hover:text-accent transition-colors font-bold">Self Protocol</a> as the proof provider,
-            deployed on {network.isTestnet ? "Celo Sepolia" : "Celo"}. It supports three registration modes (verified wallet,
-            agent identity, and wallet-free) with full sybil resistance and ZK privacy.
+            deployed on {network.isTestnet ? "Celo Sepolia" : "Celo"}. It supports four registration modes (verified wallet,
+            agent identity, wallet-free, and passkey smart wallet) with full sybil resistance and ZK privacy.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

@@ -3,15 +3,17 @@
 /// Feature-gated behind the `axum` feature flag.
 ///
 /// Usage:
-/// ```ignore
+/// ```no_run
 /// use axum::{Router, routing::get, middleware};
 /// use self_agent_sdk::middleware::self_agent_auth;
 /// use self_agent_sdk::{SelfAgentVerifier, VerifierConfig};
 /// use std::sync::Arc;
 /// use tokio::sync::Mutex;
 ///
+/// async fn handler() -> &'static str { "ok" }
+///
 /// let verifier = Arc::new(Mutex::new(SelfAgentVerifier::new(VerifierConfig::default())));
-/// let app = Router::new()
+/// let app: Router<Arc<Mutex<SelfAgentVerifier>>> = Router::new()
 ///     .route("/api/protected", get(handler))
 ///     .layer(middleware::from_fn_with_state(verifier, self_agent_auth));
 /// ```

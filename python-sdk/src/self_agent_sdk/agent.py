@@ -7,13 +7,35 @@ import httpx
 from web3 import Web3
 from eth_account import Account
 
-from .constants import NETWORKS, DEFAULT_NETWORK, REGISTRY_ABI, PROVIDER_ABI, HEADERS, NetworkName
+from .constants import NETWORKS, DEFAULT_NETWORK, REGISTRY_ABI, PROVIDER_ABI, HEADERS, ZERO_ADDRESS, NetworkName
 from .types import AgentInfo, AgentCredentials
 from .agent_card import (
     A2AAgentCard, AgentSkill, SelfProtocolExtension, TrustModel, CardCredentials,
     get_provider_label, build_agent_card_dict,
 )
 from ._signing import compute_body_hash, compute_message, sign_message, address_to_agent_key
+from .registration_flow import (
+    DEFAULT_API_BASE, RegistrationSession, DeregistrationSession,
+)
+
+def _api_json_or_raise(resp: httpx.Response, fallback_message: str) -> dict:
+    """Parse API JSON and raise RuntimeError on HTTP or API-level errors."""
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"{fallback_message}: invalid JSON response") from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"{fallback_message}: unexpected response shape")
+
+    if not resp.is_success:
+        message = data.get("error") if isinstance(data.get("error"), str) else f"HTTP {resp.status_code}"
+        raise RuntimeError(message)
+
+    if isinstance(data.get("error"), str):
+        raise RuntimeError(data["error"])
+
+    return data
 
 
 class SelfAgent:
@@ -35,7 +57,8 @@ class SelfAgent:
         registry_address: str | None = None,
         rpc_url: str | None = None,
     ):
-        net = NETWORKS[network or DEFAULT_NETWORK]
+        self._network_name: NetworkName = network or DEFAULT_NETWORK
+        net = NETWORKS[self._network_name]
         self._rpc_url = rpc_url or net["rpc_url"]
         self._registry_address = registry_address or net["registry_address"]
 
@@ -105,7 +128,10 @@ class SelfAgent:
     # ─── A2A Agent Card Methods ───────────────────────────────────────────
 
     def get_agent_card(self) -> A2AAgentCard | None:
-        """Read the A2A Agent Card from on-chain metadata (if set)."""
+        """Read the A2A Agent Card from on-chain metadata (if set).
+
+        Returns None if the agent is not registered or has no card.
+        """
         agent_id = self._registry.functions.getAgentId(self._agent_key).call()
         if agent_id == 0:
             return None
@@ -127,13 +153,17 @@ class SelfAgent:
         url: str | None = None,
         skills: list[AgentSkill] | None = None,
     ) -> str:
-        """Build and write an A2A Agent Card. Returns tx hash."""
+        """Build and write an A2A Agent Card to on-chain metadata.
+
+        Auto-populates selfProtocol fields (trust model, credentials) from on-chain data.
+        Returns the transaction hash as a hex string.
+        """
         agent_id = self._registry.functions.getAgentId(self._agent_key).call()
         if agent_id == 0:
             raise ValueError("Agent not registered")
 
         provider_addr = self._registry.functions.getProofProvider(agent_id).call()
-        if not provider_addr or provider_addr == "0x" + "0" * 40:
+        if not provider_addr or provider_addr == ZERO_ADDRESS:
             raise ValueError("Agent has no proof provider — cannot build card")
         provider_contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(provider_addr), abi=PROVIDER_ABI,
@@ -204,7 +234,10 @@ class SelfAgent:
         return tx_hash.hex()
 
     def to_agent_card_data_uri(self) -> str:
-        """Returns a data: URI with base64-encoded Agent Card JSON."""
+        """Return a data: URI with base64-encoded Agent Card JSON.
+
+        Raises ValueError if no agent card is set.
+        """
         card = self.get_agent_card()
         if card is None:
             raise ValueError("No A2A Agent Card set")
@@ -213,7 +246,10 @@ class SelfAgent:
         return f"data:application/json;base64,{encoded}"
 
     def get_credentials(self) -> AgentCredentials | None:
-        """Read ZK-attested credentials from on-chain."""
+        """Read ZK-attested credentials from on-chain.
+
+        Returns None if the agent is not registered or has no credentials.
+        """
         agent_id = self._registry.functions.getAgentId(self._agent_key).call()
         if agent_id == 0:
             return None
@@ -234,17 +270,149 @@ class SelfAgent:
             return None
 
     def get_verification_strength(self) -> int:
-        """Read the verification strength score from the provider contract."""
+        """Read the verification strength score (0-100) from the provider contract.
+
+        Returns 0 if the agent is not registered or has no provider.
+        """
         agent_id = self._registry.functions.getAgentId(self._agent_key).call()
         if agent_id == 0:
             return 0
         provider_addr = self._registry.functions.getProofProvider(agent_id).call()
-        if provider_addr == "0x" + "0" * 40:
+        if provider_addr == ZERO_ADDRESS:
             return 0
         provider_contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(provider_addr), abi=PROVIDER_ABI,
         )
         return provider_contract.functions.verificationStrength().call()
+
+    # ─── Registration / Deregistration (REST API) ──────────────────────
+
+    @classmethod
+    def request_registration(
+        cls,
+        *,
+        mode: str = "agent-identity",
+        network: NetworkName = "mainnet",
+        disclosures: dict | None = None,
+        human_address: str | None = None,
+        agent_name: str | None = None,
+        agent_description: str | None = None,
+        api_base: str = DEFAULT_API_BASE,
+    ) -> RegistrationSession:
+        """Initiate agent registration via the REST API.
+
+        Returns a :class:`RegistrationSession` with a QR code URL and deep link
+        that the human operator must scan with the Self app.
+
+        Args:
+            mode: Registration mode (``"verified-wallet"``, ``"agent-identity"``,
+                ``"wallet-free"``, ``"smart-wallet"``).
+            network: ``"mainnet"`` or ``"testnet"``.
+            disclosures: Optional disclosure requirements (e.g.
+                ``{"minimumAge": 18, "ofac": True}``).
+            human_address: Human's wallet address (required for some modes).
+            agent_name: Display name stored on-chain.
+            agent_description: Description stored on-chain.
+            api_base: Base URL for the Self Agent ID API.
+        """
+        payload: dict = {
+            "mode": mode,
+            "network": network,
+            "disclosures": disclosures or {},
+        }
+        if human_address is not None:
+            payload["humanAddress"] = human_address
+        if agent_name is not None:
+            payload["agentName"] = agent_name
+        if agent_description is not None:
+            payload["agentDescription"] = agent_description
+
+        resp = httpx.post(f"{api_base}/api/agent/register", json=payload)
+        data = _api_json_or_raise(resp, "Registration request failed")
+
+        return RegistrationSession(
+            session_token=data["sessionToken"],
+            stage=data["stage"],
+            qr_url=data.get("qrUrl", ""),
+            deep_link=data.get("deepLink", ""),
+            agent_address=data.get("agentAddress", ""),
+            expires_at=data.get("expiresAt", ""),
+            time_remaining_ms=data.get("timeRemainingMs", 0),
+            human_instructions=data.get("humanInstructions", []),
+            _api_base=api_base,
+        )
+
+    @classmethod
+    def get_agent_info(
+        cls,
+        agent_id: int,
+        *,
+        network: NetworkName = "mainnet",
+        api_base: str = DEFAULT_API_BASE,
+    ) -> dict:
+        """Query agent info via the REST API (no private key needed).
+
+        Args:
+            agent_id: On-chain agent ID.
+            network: ``"mainnet"`` or ``"testnet"``.
+            api_base: Base URL for the Self Agent ID API.
+
+        Returns:
+            Dict with agent info, credentials, and card data.
+        """
+        chain_id = 42220 if network == "mainnet" else 11142220
+        resp = httpx.get(f"{api_base}/api/agent/info/{chain_id}/{agent_id}")
+        return _api_json_or_raise(resp, "Agent info request failed")
+
+    @classmethod
+    def get_agents_for_human(
+        cls,
+        address: str,
+        *,
+        network: NetworkName = "mainnet",
+        api_base: str = DEFAULT_API_BASE,
+    ) -> dict:
+        """Query all agents registered to a human address via the REST API.
+
+        Args:
+            address: Human's Ethereum address.
+            network: ``"mainnet"`` or ``"testnet"``.
+            api_base: Base URL for the Self Agent ID API.
+
+        Returns:
+            Dict with the list of agent IDs for the given human.
+        """
+        chain_id = 42220 if network == "mainnet" else 11142220
+        resp = httpx.get(f"{api_base}/api/agent/agents/{chain_id}/{address}")
+        return _api_json_or_raise(resp, "Agents-for-human request failed")
+
+    def request_deregistration(
+        self,
+        *,
+        api_base: str = DEFAULT_API_BASE,
+    ) -> DeregistrationSession:
+        """Initiate deregistration for this agent via the REST API.
+
+        Returns a :class:`DeregistrationSession` with a QR code URL that the
+        human operator must scan with the Self app to confirm removal.
+        """
+        resp = httpx.post(f"{api_base}/api/agent/deregister", json={
+            "network": self._network_name,
+            "agentAddress": self._account.address,
+            "agentPrivateKey": self._private_key,
+        })
+        data = _api_json_or_raise(resp, "Deregistration request failed")
+
+        return DeregistrationSession(
+            session_token=data["sessionToken"],
+            stage=data["stage"],
+            qr_url=data.get("qrUrl", ""),
+            deep_link=data.get("deepLink", ""),
+            expires_at=data.get("expiresAt", ""),
+            time_remaining_ms=data.get("timeRemainingMs", 0),
+            human_instructions=data.get("humanInstructions", []),
+            _api_base=api_base,
+        )
 
     @staticmethod
     def _dict_to_card(d: dict) -> A2AAgentCard:

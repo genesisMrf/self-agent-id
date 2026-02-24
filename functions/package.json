@@ -5,7 +5,7 @@
   "scripts": {
     "gcp-build": "",
     "build": "tsc",
-    "pack-sdk": "cd ../sdk && npm pack --pack-destination ../functions",
+    "pack-sdk": "cd ../typescript-sdk && npm pack --pack-destination ../functions",
     "start:service": "npx functions-framework --target=demoService --port=8081",
     "start:agent": "npx functions-framework --target=demoAgent --port=8082"
   },

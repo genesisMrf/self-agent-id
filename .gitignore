@@ -23,5 +23,8 @@ build/
 .coverage
 htmlcov/
 
+# Plans
+docs
+
 .agents/
 .claude/

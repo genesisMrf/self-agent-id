@@ -20,12 +20,12 @@ pub struct NetworkConfig {
 pub fn network_config(network: NetworkName) -> NetworkConfig {
     match network {
         NetworkName::Mainnet => NetworkConfig {
-            registry_address: Address::from_str("0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095")
+            registry_address: Address::from_str("0x60651482a3033A72128f874623Fc790061cc46D4")
                 .unwrap(),
             rpc_url: "https://forno.celo.org",
         },
         NetworkName::Testnet => NetworkConfig {
-            registry_address: Address::from_str("0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b")
+            registry_address: Address::from_str("0x29d941856134b1D053AfFF57fa560324510C79fa")
                 .unwrap(),
             rpc_url: "https://forno.celo-sepolia.celo-testnet.org",
         },

@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import {
+  Key,
+  ShieldCheck,
   ArrowRight,
   Shield,
-  Fingerprint,
-  Layers,
+  Ban,
+  Code2,
   BookOpen,
-  ScanLine,
+  Cpu,
+  Handshake,
+  FileCheck,
   Bot,
+  ExternalLink,
+  ScanLine,
   Zap,
   UserCheck,
   CalendarCheck,
@@ -16,8 +22,8 @@ import {
   Users,
   Globe,
   BadgeCheck,
-  ExternalLink,
-  Code2,
+  Fingerprint,
+  Layers,
 } from "lucide-react";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
@@ -28,7 +34,7 @@ export default function Home() {
     <main className="min-h-screen">
       {/* ────────────── Hero ────────────── */}
       <section className="relative overflow-hidden hero-glow bg-grid">
-        <div className="relative z-10 flex flex-col items-center justify-center text-center px-6 pt-32 pb-20 md:pb-28">
+        <div className="relative z-10 flex flex-col items-center justify-center text-center px-6 pt-32 pb-12 md:pb-16">
           <Badge variant="info" className="mb-4">
             Trusted Identity for AI Agents
           </Badge>
@@ -70,6 +76,22 @@ export default function Home() {
                 GitHub <ExternalLink size={14} />
               </Button>
             </a>
+          </div>
+
+          {/* Package badges */}
+          <div className="flex gap-2 flex-wrap justify-center mt-6">
+            <code className="bg-surface-2 font-mono text-emerald-400 px-2.5 py-0.5 rounded text-xs">
+              npm · @selfxyz/agent-sdk
+            </code>
+            <code className="bg-surface-2 font-mono text-blue-400 px-2.5 py-0.5 rounded text-xs">
+              pip · selfxyz-agent-sdk
+            </code>
+            <code className="bg-surface-2 font-mono text-orange-400 px-2.5 py-0.5 rounded text-xs">
+              cargo · self-agent-sdk
+            </code>
+            <code className="bg-surface-2 font-mono text-purple-400 px-2.5 py-0.5 rounded text-xs">
+              mcp · @selfxyz/mcp-server
+            </code>
           </div>
         </div>
       </section>
@@ -146,6 +168,76 @@ export default function Home() {
                 </Card>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Who Is It For ─── */}
+      <section className="bg-surface-1 px-6 py-16">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-10">Who Is It For</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                  <Cpu size={16} className="text-accent" />
+                </span>
+                <h3 className="font-bold text-lg">Agent Operators</h3>
+              </div>
+              <p className="text-sm text-muted mb-4">
+                Register your AI agent with a passport scan. Choose from four modes &mdash;
+                wallet-based, agent keypair, wallet-free, or passkey smart wallet.
+                Your agent gets a soulbound NFT and an A2A-compatible identity card
+                that any service can verify instantly.
+              </p>
+              <Link href="/register">
+                <Button variant="primary" size="sm">
+                  <Key size={14} />
+                  Register Agent
+                </Button>
+              </Link>
+            </Card>
+
+            <Card>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-8 h-8 rounded-full bg-accent-2/20 flex items-center justify-center">
+                  <Code2 size={16} className="text-accent-2" />
+                </span>
+                <h3 className="font-bold text-lg">Service Developers</h3>
+              </div>
+              <p className="text-sm text-muted mb-4">
+                Add one line of middleware to verify agents are human-backed.
+                The SDK recovers the signer from ECDSA signatures and checks the on-chain
+                registry &mdash; with configurable sybil limits, credential checks,
+                and reputation-based access control.
+              </p>
+              <Link href="/integration">
+                <Button variant="secondary" size="sm">
+                  <Code2 size={14} />
+                  Integration Guide
+                </Button>
+              </Link>
+            </Card>
+
+            <Card>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <Bot size={16} className="text-purple-400" />
+                </span>
+                <h3 className="font-bold text-lg">AI Coding Assistants</h3>
+              </div>
+              <p className="text-sm text-muted mb-4">
+                Use the MCP server or Claude Code plugin to manage agent identity directly
+                from your IDE. Register, sign requests, verify agents, and query credentials
+                &mdash; 10 tools that work in any MCP-compatible IDE (Claude Code, Cursor, Windsurf, Copilot, and more).
+              </p>
+              <Link href="/integration#mcp">
+                <Button variant="secondary" size="sm">
+                  <Bot size={14} />
+                  MCP &amp; Plugin
+                </Button>
+              </Link>
+            </Card>
           </div>
         </div>
       </section>
@@ -283,7 +375,6 @@ export default function Home() {
       </section>
 
       {/* ────────────── For Developers ────────────── */}
-      {/* ── Dark-mode developer section ── */}
       <section className="dark-section px-6 py-20">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-center gap-2 mb-4">

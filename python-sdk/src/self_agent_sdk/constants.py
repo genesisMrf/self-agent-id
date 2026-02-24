@@ -11,16 +11,17 @@ class NetworkConfig(TypedDict):
 
 NETWORKS: dict[NetworkName, NetworkConfig] = {
     "mainnet": {
-        "registry_address": "0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095",
+        "registry_address": "0x60651482a3033A72128f874623Fc790061cc46D4",
         "rpc_url": "https://forno.celo.org",
     },
     "testnet": {
-        "registry_address": "0x42CEA1b318557aDE212bED74FC3C7f06Ec52bd5b",
+        "registry_address": "0x29d941856134b1D053AfFF57fa560324510C79fa",
         "rpc_url": "https://forno.celo-sepolia.celo-testnet.org",
     },
 }
 
 DEFAULT_NETWORK: NetworkName = "mainnet"
+ZERO_ADDRESS = "0x" + "0" * 40
 DEFAULT_MAX_AGE_MS = 5 * 60 * 1000       # 5 minutes
 DEFAULT_CACHE_TTL_MS = 60_000             # 1 minute
 
@@ -70,7 +71,7 @@ REGISTRY_ABI = [
          {"name": "gender", "type": "string"},
          {"name": "expiryDate", "type": "string"},
          {"name": "olderThan", "type": "uint256"},
-         {"name": "ofac", "type": "bool[]"},
+         {"name": "ofac", "type": "bool[3]"},
      ]}],
     },
     # A2A Agent Cards

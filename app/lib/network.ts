@@ -18,6 +18,7 @@ export interface NetworkConfig {
   isTestnet: boolean;
   demoServiceUrl: string;
   demoAgentUrl: string;
+  demoAgentAddress?: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
 }
 
@@ -31,15 +32,16 @@ const CELO_MAINNET: NetworkConfig = {
   chainIdHex: "0xa4ec",
   rpcUrl: process.env.NEXT_PUBLIC_RPC_CELO || "https://forno.celo.org",
   blockExplorer: "https://celoscan.io",
-  registryAddress: "0x62e37d0f6c5f67784b8828b3df68bcdbb2e55095",
-  providerAddress: "0x0B43f87aE9F2AE2a50b3698573B614fc6643A084",
-  agentDemoVerifierAddress: "0x0aA08262b0Bd2d07ab15ffc8FFfF3D256291e0b2",
-  agentGateAddress: "0x2d710190e018fCf006E38eEB869b25C5F7d82424",
+  registryAddress: "0x60651482a3033A72128f874623Fc790061cc46D4",
+  providerAddress: "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+  agentDemoVerifierAddress: "0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C",
+  agentGateAddress: "0xD4B30Da5319893FEAB07620DbFf0945e3aDef619",
   hubV2Address: "0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF",
   selfEndpointType: "celo",
   isTestnet: false,
   demoServiceUrl: "",
   demoAgentUrl: "",
+  demoAgentAddress: "0x47a0B2c77b0c57B8d5E95Bf31D502a05211bB6FC",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
 };
 
@@ -52,15 +54,16 @@ const CELO_SEPOLIA: NetworkConfig = {
   chainIdHex: "0xaa044c",
   rpcUrl: process.env.NEXT_PUBLIC_RPC_CELO_SEPOLIA || "https://forno.celo-sepolia.celo-testnet.org",
   blockExplorer: "https://celo-sepolia.blockscout.com",
-  registryAddress: "0x42cea1b318557ade212bed74fc3c7f06ec52bd5b",
-  providerAddress: "0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4",
-  agentDemoVerifierAddress: "0x26e05bF632fb5bACB665ab014240EAC1413dAE35",
-  agentGateAddress: "0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577",
+  registryAddress: "0x29d941856134b1D053AfFF57fa560324510C79fa",
+  providerAddress: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
+  agentDemoVerifierAddress: "0x31A5A1d34728c5e6425594A596997A7Bf4aD607d",
+  agentGateAddress: "0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E",
   hubV2Address: "0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74",
   selfEndpointType: "staging_celo",
   isTestnet: true,
   demoServiceUrl: "",
   demoAgentUrl: "",
+  demoAgentAddress: "0xbEFb51b4c4b2B91f3685463360DD62f76aEe7ADF",
   nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
 };
 

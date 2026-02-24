@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ethers } from "ethers";
 import dynamic from "next/dynamic";
 import {
@@ -23,6 +24,8 @@ import {
   Loader2,
   Shield,
   Rocket,
+  Terminal,
+  Bot,
 } from "lucide-react";
 import { connectWallet } from "@/lib/wallet";
 import { REGISTRY_ABI, PROVIDER_ABI } from "@/lib/constants";
@@ -34,6 +37,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { isPasskeySupported, createPasskeyWallet } from "@/lib/aa";
 import { savePasskey } from "@/lib/passkey-storage";
+import { saveAgentPrivateKey } from "@/lib/agentKeyVault";
 
 // Dynamic import to avoid SSR issues with Self QR SDK
 const SelfQRcodeWrapper = dynamic(
@@ -105,6 +109,11 @@ export default function RegisterPage() {
   const [agentIdResult, setAgentIdResult] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  const agentSnippets = useMemo(
+    () => getAgentSnippets(network.registryAddress, network.rpcUrl, activeAgentFeatures),
+    [network.registryAddress, network.rpcUrl, activeAgentFeatures]
+  );
+
   const toggleAgentFeature = (id: string) => {
     setActiveAgentFeatures((prev) => {
       const next = new Set(prev);
@@ -166,25 +175,33 @@ export default function RegisterPage() {
     newWallet: ethers.Wallet | ethers.HDNodeWallet,
     humanIdentifier: string
   ) => {
-    // Must match the deployed contract's _verifyAgentSignature:
-    // keccak256(abi.encodePacked("self-agent-id:register:", humanAddress))
-    // NOTE: The source code now includes chainId + registryAddress but the
-    // currently deployed V4 bytecode does NOT (chain-binds commit is newer
-    // than the deployment). Update this after redeployment.
+    // Read per-agent nonce from registry to prevent signature replay attacks.
+    // New agents have nonce = 0; nonce increments on each successful registration.
+    const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+    const registry = new ethers.Contract(
+      network.registryAddress,
+      ["function agentNonces(address) view returns (uint256)"],
+      provider,
+    );
+    const nonce: bigint = await registry.agentNonces(newWallet.address);
+
+    // Challenge format matches _verifyAgentSignature in SelfAgentRegistry:
+    // keccak256("self-agent-id:register:" + humanAddress + chainId + registry + nonce)
     const messageHash = ethers.keccak256(
       ethers.solidityPacked(
-        ["string", "address"],
-        ["self-agent-id:register:", humanIdentifier]
-      )
+        ["string", "address", "uint256", "address", "uint256"],
+        [
+          "self-agent-id:register:",
+          humanIdentifier,
+          BigInt(network.chainId),
+          network.registryAddress,
+          nonce,
+        ],
+      ),
     );
-
-    console.log("[signAgentChallenge] humanIdentifier:", humanIdentifier);
-    console.log("[signAgentChallenge] messageHash:", messageHash);
 
     const signature = await newWallet.signMessage(ethers.getBytes(messageHash));
     const sig = ethers.Signature.from(signature);
-
-    console.log("[signAgentChallenge] v:", sig.v, "r:", sig.r, "s:", sig.s);
 
     return sig;
   };
@@ -255,19 +272,6 @@ export default function RegisterPage() {
     // which comes from the userId field. Both must use the same address.
     const sig = await signAgentChallenge(newWallet, agentAddress);
 
-    // Self-verify: recover signer to confirm the signature is valid
-    const verifyHash = ethers.keccak256(
-      ethers.solidityPacked(
-        ["string", "address"],
-        ["self-agent-id:register:", agentAddress]
-      )
-    );
-    const ethSignedHash = ethers.hashMessage(ethers.getBytes(verifyHash));
-    const recovered = ethers.recoverAddress(ethSignedHash, sig);
-    console.log("[walletFree] self-verify recovered:", recovered);
-    console.log("[walletFree] agentAddress:", agentAddress);
-    console.log("[walletFree] signature valid:", recovered.toLowerCase() === agentAddress.toLowerCase());
-
     // Build "W" + config(1) + agentAddr(40) + guardian(40) + r(64) + s(64) + v(2) = 212 chars
     const cfgIdx = getConfigIndex(disclosures);
     const agentAddrHex = newWallet.address.slice(2).toLowerCase();
@@ -276,12 +280,6 @@ export default function RegisterPage() {
     const sHex = sig.s.slice(2);
     const vHex = sig.v.toString(16).padStart(2, "0");
     const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
-
-    console.log("[walletFree] agentAddress (userId):", agentAddress);
-    console.log("[walletFree] agentAddrHex in userData:", agentAddrHex);
-    console.log("[walletFree] userDefinedData:", userDefinedData);
-    console.log("[walletFree] userDefinedData.length:", userDefinedData.length);
-    console.log("[walletFree] r:", sig.r, "s:", sig.s, "v:", sig.v);
 
     // Pass lowercase address with 0x to buildSelfApp (SDK strips 0x for userId)
     setSelfApp(buildSelfApp(agentAddress.toLowerCase(), userDefinedData));
@@ -307,6 +305,11 @@ export default function RegisterPage() {
       // 2. Generate agent keypair
       const newWallet = ethers.Wallet.createRandom();
       setAgentWallet(newWallet as ethers.HDNodeWallet);
+      saveAgentPrivateKey({
+        agentAddress: newWallet.address,
+        privateKey: newWallet.privateKey,
+        guardianAddress: swAddress,
+      });
 
       // 3. Agent signs challenge (use checksummed address for solidityPacked consistency)
       const agentAddress = ethers.getAddress(newWallet.address);
@@ -320,11 +323,6 @@ export default function RegisterPage() {
       const sHex = sig.s.slice(2);
       const vHex = sig.v.toString(16).padStart(2, "0");
       const userDefinedData = "W" + cfgIdx + agentAddrHex + guardianHex + rHex + sHex + vHex;
-
-      console.log("[smartWallet] agentAddress (userId):", agentAddress);
-      console.log("[smartWallet] smartWalletAddress (guardian):", swAddress);
-      console.log("[smartWallet] userDefinedData:", userDefinedData);
-      console.log("[smartWallet] userDefinedData.length:", userDefinedData.length);
 
       // 5. Save passkey for later sign-in
       savePasskey({
@@ -348,7 +346,7 @@ export default function RegisterPage() {
       const agentAddress = mode === "simple" ? walletAddress! : agentWallet!.address;
       const agentKey = ethers.zeroPadValue(agentAddress, 32);
 
-      const provider = new ethers.BrowserProvider((window as unknown as { ethereum: ethers.Eip1193Provider }).ethereum);
+      const provider = new ethers.BrowserProvider(window.ethereum!);
       const registry = new ethers.Contract(network.registryAddress, REGISTRY_ABI, provider);
 
       const agentId: bigint = await registry.getAgentId(agentKey);
@@ -356,11 +354,13 @@ export default function RegisterPage() {
       setAgentIdResult(agentId.toString());
 
       // Read provider strength
+      let resolvedVerificationStrength: number | null = null;
       const providerAddr: string = await registry.agentProofProvider(agentId);
       if (providerAddr && providerAddr !== ethers.ZeroAddress) {
         const prov = new ethers.Contract(providerAddr, PROVIDER_ABI, provider);
         const strength: number = await prov.verificationStrength();
-        setVerificationStrength(Number(strength));
+        resolvedVerificationStrength = Number(strength);
+        setVerificationStrength(resolvedVerificationStrength);
       }
 
       // Read credentials for card
@@ -378,7 +378,7 @@ export default function RegisterPage() {
           chainId: network.chainId,
           proofProvider: providerAddr,
           providerName: providerAddr !== ethers.ZeroAddress ? "self" : "unknown",
-          verificationStrength: verificationStrength ?? 100,
+          verificationStrength: resolvedVerificationStrength ?? 100,
           trustModel: {
             proofType: "passport",
             sybilResistant: true,
@@ -458,7 +458,7 @@ export default function RegisterPage() {
       {step === "mode" && (
         <div className="flex flex-col items-center gap-6 w-full">
           <p className="text-muted text-center max-w-md">
-            Choose how your agent&apos;s on-chain identity will be created.
+            Choose how you want to register on-chain: wallet identity for direct human use, or a dedicated agent identity for autonomous software.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
@@ -499,7 +499,7 @@ export default function RegisterPage() {
                 <span className="font-bold text-sm">Verified Wallet</span>
               </div>
               <p className="text-xs text-muted mt-2">
-                Your wallet address = agent identity. For on-chain gating.
+                Your wallet address is the verified identity. Best for human-operated, on-chain actions.
               </p>
             </button>
 
@@ -542,7 +542,7 @@ export default function RegisterPage() {
               </div>
               <p className="text-xs text-muted mt-2">
                 {passkeySupported
-                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless."
+                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless on Celo mainnet."
                   : "Passkeys not supported in this browser."}
               </p>
             </button>
@@ -579,7 +579,7 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   Best for <strong className="text-foreground">on-chain gating</strong> where you transact directly
-                  (DAOs, token access). Not for autonomous agents.
+                  (DAOs, token access). For autonomous agents, choose Agent Identity.
                 </li>
               </ul>
             ) : mode === "advanced" ? (
@@ -590,11 +590,11 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   A fresh <strong className="text-foreground">agent keypair</strong> is generated in your browser.
-                  The agent signs a challenge to prove key ownership.
+                  Your browser signs a challenge with that key to prove key ownership during registration.
                 </li>
                 <li>
-                  Scan your passport with the <strong className="text-foreground">Self app</strong>.
-                  The contract verifies both the ZK proof and the agent&apos;s signature in one step.
+                  Scan your passport with the <strong className="text-foreground">Self app</strong> &mdash;
+                  the contract verifies both the ZK proof and the registration signature in one step.
                 </li>
                 <li>
                   Your agent operates with <strong className="text-foreground">its own key</strong>.
@@ -609,15 +609,24 @@ export default function RegisterPage() {
                 </li>
                 <li>
                   A fresh <strong className="text-foreground">agent keypair</strong> is also generated.
-                  The agent signs requests with its own ECDSA key.
+                  That key is used later by your agent software to sign API requests.
                 </li>
                 <li>
                   The smart wallet becomes the <strong className="text-foreground">guardian</strong>.
                   You can revoke your agent anytime with your biometrics, gaslessly.
                 </li>
                 <li>
-                  The smart wallet <strong className="text-foreground">deploys on first use</strong> (counterfactual).
-                  All management transactions are sponsored, no gas needed.
+                  Powered by <strong className="text-foreground">ZeroDev Kernel accounts</strong> with
+                  passkey auth and <strong className="text-foreground">Pimlico</strong> sponsored ops on Celo mainnet.
+                  The smart wallet deploys on first use (counterfactual) &mdash; see{" "}
+                  <a
+                    href="https://docs.zerodev.app/sdk/advanced/counterfactual-address"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:text-accent-2 underline"
+                  >
+                    counterfactual address docs
+                  </a>.
                 </li>
               </ul>
             ) : (
@@ -782,10 +791,48 @@ export default function RegisterPage() {
               )}
             </Button>
           ) : (
-            <Button onClick={() => setStep("connect")} variant="primary" size="lg">
-              {mode === "simple" ? "Connect Wallet" : "Connect & Generate Agent Key"}
-            </Button>
+            <div className="w-full flex flex-col items-center gap-2">
+              <p className="text-xs text-muted text-center max-w-md">
+                {mode === "simple"
+                  ? "Next step: connect your wallet. That same address will be your verified on-chain identity."
+                  : "Next step: connect your wallet to prove the human. A separate agent keypair is generated in-browser for your agent."}
+              </p>
+              <Button onClick={() => setStep("connect")} variant="primary" size="lg">
+                {mode === "simple"
+                  ? "Continue: Connect Verified Wallet"
+                  : "Continue: Connect Wallet for Agent Identity"}
+              </Button>
+            </div>
           )}
+
+          {/* CLI / Agent-guided registration */}
+          <Card className="w-full border border-accent/30 bg-accent/5">
+            <div className="flex items-start gap-3">
+              <Terminal size={18} className="text-accent mt-0.5 shrink-0" />
+              <p className="text-sm text-muted">
+                Prefer terminal workflows? Use the{" "}
+                <Link href="/cli" className="text-accent hover:text-accent-2 underline underline-offset-2 font-medium">
+                  CLI
+                </Link>{" "}
+                to register from your terminal, or let your backend orchestrate registration via the{" "}
+                <strong className="text-foreground">agent-guided flow</strong> (recommended for automated onboarding).
+              </p>
+            </div>
+          </Card>
+
+          {/* MCP / Plugin registration */}
+          <Card className="w-full border border-purple-500/30 bg-purple-500/5">
+            <div className="flex items-start gap-3">
+              <Bot size={18} className="text-purple-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-muted">
+                Using an AI coding assistant? The{" "}
+                <Link href="/integration#mcp" className="text-accent hover:text-accent-2 underline underline-offset-2 font-medium">
+                  MCP server &amp; plugin
+                </Link>{" "}
+                can register and manage agents directly from your editor.
+              </p>
+            </div>
+          </Card>
 
           {errorMessage && (
             <p className="text-sm text-accent-error text-center">{errorMessage}</p>
@@ -949,7 +996,7 @@ export default function RegisterPage() {
           {mode === "smartwallet" && smartWalletAddress && network.isTestnet && (
             <div className="bg-accent/5 border border-accent/20 rounded-lg px-4 py-3 text-xs text-muted w-full max-w-md">
               <strong className="text-foreground">Testnet:</strong> On {network.label}, the smart wallet is computed
-              but not deployed. Gasless passkey operations are available on Celo Mainnet.
+              but not deployed. Gasless passkey operations are available on Celo Mainnet (Pimlico + ZeroDev).
             </div>
           )}
           {selfApp ? (
@@ -1019,7 +1066,7 @@ export default function RegisterPage() {
                 {cardStep === "pending" ? "Step 2/2: Preparing Agent Card..." :
                  cardStep === "writing" ? "Step 2/2: Setting Agent Card (confirm in wallet)..." :
                  cardStep === "done" ? "Step 2/2: Agent Card Set" :
-                 "Step 2/2: Agent Card skipped — you can set it later from My Agents"}
+                 "Step 2/2: Agent Card skipped — you can set it later via SDK or updateAgentMetadata()"}
               </span>
             </div>
           </Card>
@@ -1151,8 +1198,10 @@ export default function RegisterPage() {
                 </div>
                 <p className="text-sm text-muted mb-3">
                   A fresh Ethereum keypair was generated in your browser for your agent.
-                  Copy these credentials now. The private key cannot be recovered
-                  after you leave this page.
+                  Copy these credentials now &mdash; this is the only place we display the private key.
+                  {mode === "smartwallet"
+                    ? " For demo convenience, this browser keeps a local copy linked to your passkey wallet."
+                    : " If you leave without saving it, it cannot be recovered."}
                 </p>
 
                 <div className="space-y-3">
@@ -1215,51 +1264,44 @@ export default function RegisterPage() {
                   If <strong className="text-foreground">leaked</strong>, deregister immediately.
                 </p>
 
-                {(() => {
-                  const agentSnippets = getAgentSnippets(network.registryAddress, network.rpcUrl, activeAgentFeatures);
-                  return (
-                    <>
-                      <div className="flex gap-2 flex-wrap">
-                        {agentSnippets.map((snippet, i) => (
-                          <button
-                            key={snippet.title}
-                            onClick={() => setActiveAgentSnippet(i)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
-                              i === activeAgentSnippet
-                                ? "bg-gradient-to-r from-accent to-accent-2 text-white border-transparent"
-                                : "bg-surface-1 text-foreground border-border hover:bg-surface-2"
-                            }`}
-                          >
-                            {snippet.title}
-                          </button>
-                        ))}
-                      </div>
+                <div className="flex gap-2 flex-wrap">
+                  {agentSnippets.map((snippet, i) => (
+                    <button
+                      key={snippet.title}
+                      onClick={() => setActiveAgentSnippet(i)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                        i === activeAgentSnippet
+                          ? "bg-gradient-to-r from-accent to-accent-2 text-white border-transparent"
+                          : "bg-surface-1 text-foreground border-border hover:bg-surface-2"
+                      }`}
+                    >
+                      {snippet.title}
+                    </button>
+                  ))}
+                </div>
 
-                      <div className="flex gap-1.5 flex-wrap">
-                        {AGENT_FEATURES.map((feat) => {
-                          const active = activeAgentFeatures.has(feat.id);
-                          return (
-                            <button
-                              key={feat.id}
-                              onClick={() => toggleAgentFeature(feat.id)}
-                              title={feat.description}
-                              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                                active
-                                  ? "bg-accent/15 text-accent border border-accent/40"
-                                  : "bg-surface-2 text-muted border border-transparent hover:text-foreground"
-                              }`}
-                            >
-                              {active ? "\u2713" : "+"} {feat.label}
-                            </button>
-                          );
-                        })}
-                      </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {AGENT_FEATURES.map((feat) => {
+                    const active = activeAgentFeatures.has(feat.id);
+                    return (
+                      <button
+                        key={feat.id}
+                        onClick={() => toggleAgentFeature(feat.id)}
+                        title={feat.description}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                          active
+                            ? "bg-accent/15 text-accent border border-accent/40"
+                            : "bg-surface-2 text-muted border border-transparent hover:text-foreground"
+                        }`}
+                      >
+                        {active ? "\u2713" : "+"} {feat.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                      <p className="text-xs text-muted">{agentSnippets[activeAgentSnippet].description}</p>
-                      <CodeBlock tabs={agentSnippets[activeAgentSnippet].snippets} />
-                    </>
-                  );
-                })()}
+                <p className="text-xs text-muted">{agentSnippets[activeAgentSnippet].description}</p>
+                <CodeBlock tabs={agentSnippets[activeAgentSnippet].snippets} />
               </div>
 
               {/* Registration details */}

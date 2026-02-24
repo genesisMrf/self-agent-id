@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useCallback, useRef, useEffect, useMemo } from "react";
+import { useReducer, useCallback, useRef, useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 import MatrixText from "@/components/MatrixText";
 import {
@@ -9,6 +9,9 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Fingerprint,
+  KeyRound,
+  Wallet,
   Loader2,
   AlertCircle,
   Rocket,
@@ -17,7 +20,7 @@ import {
   Bot,
   Send,
 } from "lucide-react";
-import { SelfAgent } from "@selfxyz/agent-sdk";
+import { SelfAgent, SelfAgentVerifier } from "@selfxyz/agent-sdk";
 import TestCard, { StepEntry } from "@/components/TestCard";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
@@ -26,6 +29,12 @@ import {
   REGISTRY_ABI,
   AGENT_DEMO_VERIFIER_ABI,
 } from "@/lib/constants";
+import { signInWithPasskey, isPasskeySupported } from "@/lib/aa";
+import {
+  getAgentPrivateKeyByAgent,
+  getAgentPrivateKeyByGuardian,
+  saveAgentPrivateKey,
+} from "@/lib/agentKeyVault";
 import { useNetwork } from "@/lib/NetworkContext";
 import type { NetworkConfig } from "@/lib/network";
 import { TESTS } from "@/lib/demo-constants";
@@ -781,23 +790,127 @@ async function runPeerTest(
     dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 1, t) } });
 
     t0 = performance.now();
-    const data = await res.json();
+    const responseBody = await res.text();
+    let data: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(responseBody);
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Response is not a JSON object");
+      }
+      data = parsed as Record<string, unknown>;
+    } catch {
+      log(id, "Demo agent returned invalid JSON");
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 1, t, true),
+          error: "Invalid JSON response from demo agent",
+        },
+      });
+      return;
+    }
     const parseElapsed = Math.round(performance.now() - t0);
     t.push(parseElapsed);
-    log(id, `Demo agent: ID #${data.demoAgent?.agentId}, verified=${data.demoAgent?.verified}`);
-    log(id, `Caller agent: ID #${data.callerAgent?.agentId}, verified=${data.callerAgent?.verified}`);
-    log(id, `sameHuman(#${data.demoAgent?.agentId}, #${data.callerAgent?.agentId}) = ${data.sameHuman}`);
+    const demoAgentInfo = (data.demoAgent as {
+      address?: string;
+      agentId?: string;
+      verified?: boolean;
+    } | undefined) ?? {};
+    const callerAgentInfo = (data.callerAgent as {
+      agentId?: string;
+      verified?: boolean;
+    } | undefined) ?? {};
+    const sameHuman = Boolean(data.sameHuman);
+    const message = typeof data.message === "string" ? data.message : "";
+
+    log(id, `Demo agent: ID #${demoAgentInfo.agentId}, verified=${demoAgentInfo.verified}`);
+    log(id, `Caller agent: ID #${callerAgentInfo.agentId}, verified=${callerAgentInfo.verified}`);
+    log(id, `sameHuman(#${demoAgentInfo.agentId}, #${callerAgentInfo.agentId}) = ${sameHuman}`);
 
     // Verify response came from demo agent
     const demoSig = res.headers.get("x-self-agent-signature");
     const demoAddr = res.headers.get("x-self-agent-address");
+    const demoTs = res.headers.get("x-self-agent-timestamp");
+    let responseSigVerified = false;
 
     dispatch({ type: "UPDATE_TEST", testId: id, state: { steps: makeSteps(steps, 2, t) } });
     log(id, "Verifying demo agent's response signature...");
     if (demoAddr) log(id, `x-self-agent-address: ${shortAddr(demoAddr)}`);
-    if (demoSig) log(id, `x-self-agent-signature: ${shortAddr(demoSig)} \u2713`);
+    if (demoSig) log(id, `x-self-agent-signature: ${shortAddr(demoSig)}`);
+    if (demoTs) log(id, `x-self-agent-timestamp: ${demoTs}`);
 
-    if (data.message) log(id, `"${data.message}"`);
+    if (demoSig && demoTs) {
+      const responseVerifier = new SelfAgentVerifier({
+        registryAddress: net.registryAddress,
+        rpcUrl: net.rpcUrl,
+        maxAgentsPerHuman: 0,
+        includeCredentials: false,
+      });
+      const sigCheck = await responseVerifier.verify({
+        signature: demoSig,
+        timestamp: demoTs,
+        method: "POST",
+        url: agentUrl,
+        body: responseBody || undefined,
+      });
+
+      const expectedDemoAddr = (net.demoAgentAddress || demoAgentInfo.address || "").toLowerCase();
+      if (net.demoAgentAddress && demoAgentInfo.address) {
+        const payloadDemoAddr = demoAgentInfo.address.toLowerCase();
+        if (payloadDemoAddr !== net.demoAgentAddress.toLowerCase()) {
+          log(
+            id,
+            `Demo agent payload address mismatch: expected ${shortAddr(net.demoAgentAddress)}, got ${shortAddr(demoAgentInfo.address)}`,
+          );
+          dispatch({
+            type: "UPDATE_TEST",
+            testId: id,
+            state: {
+              status: "error",
+              steps: makeSteps(steps, 2, t, true),
+              error: "Demo agent identity mismatch",
+            },
+          });
+          return;
+        }
+      }
+      responseSigVerified =
+        sigCheck.valid &&
+        expectedDemoAddr.length > 0 &&
+        sigCheck.agentAddress.toLowerCase() === expectedDemoAddr;
+
+      if (responseSigVerified) {
+        log(id, "Response signature verified against on-chain demo agent identity \u2713");
+      } else {
+        log(id, `Response signature invalid: ${sigCheck.error || "address mismatch"}`);
+        dispatch({
+          type: "UPDATE_TEST",
+          testId: id,
+          state: {
+            status: "error",
+            steps: makeSteps(steps, 2, t, true),
+            error: sigCheck.error || "Demo agent response signature invalid",
+          },
+        });
+        return;
+      }
+    } else {
+      log(id, "Missing response signature headers");
+      dispatch({
+        type: "UPDATE_TEST",
+        testId: id,
+        state: {
+          status: "error",
+          steps: makeSteps(steps, 2, t, true),
+          error: "Demo agent response was not signed",
+        },
+      });
+      return;
+    }
+
+    if (message) log(id, `"${message}"`);
 
     const totalElapsed = Math.round(performance.now() - totalStart);
     log(id, `Test complete (${totalElapsed}ms total)`);
@@ -813,28 +926,28 @@ async function runPeerTest(
           <div className="space-y-1 text-xs">
             <p className="text-accent-success font-bold text-sm">Agent-to-Agent Verified</p>
             <p className="text-muted">
-              Your agent: <span className={data.callerAgent.verified ? "text-accent-success" : "text-accent-error"}>
-                {data.callerAgent.verified ? "Verified" : "Not verified"}
-              </span> (ID #{data.callerAgent.agentId})
+              Your agent: <span className={callerAgentInfo.verified ? "text-accent-success" : "text-accent-error"}>
+                {callerAgentInfo.verified ? "Verified" : "Not verified"}
+              </span> (ID #{callerAgentInfo.agentId ?? "unknown"})
             </p>
             <p className="text-muted">
-              Demo agent: <span className={data.demoAgent.verified ? "text-accent-success" : "text-accent-error"}>
-                {data.demoAgent.verified ? "Verified" : "Not registered"}
-              </span> (ID #{data.demoAgent.agentId})
+              Demo agent: <span className={demoAgentInfo.verified ? "text-accent-success" : "text-accent-error"}>
+                {demoAgentInfo.verified ? "Verified" : "Not registered"}
+              </span> (ID #{demoAgentInfo.agentId ?? "unknown"})
             </p>
             <p className="text-muted">
-              Same human: <span className={data.sameHuman ? "text-accent-success" : "text-foreground"}>
-                {data.sameHuman ? "Yes" : "No (different humans)"}
+              Same human: <span className={sameHuman ? "text-accent-success" : "text-foreground"}>
+                {sameHuman ? "Yes" : "No (different humans)"}
               </span>
             </p>
             <p className="text-muted">
               Response signed by: <span className="font-mono text-foreground">
                 {demoAddr ? shortAddr(demoAddr) : "unsigned"}
               </span>
-              {demoSig ? " \u2713" : " (no signature)"}
+              {responseSigVerified ? " \u2713 verified" : " (invalid signature)"}
             </p>
-            {data.message && (
-              <p className="text-muted italic mt-1">&ldquo;{data.message}&rdquo;</p>
+            {message && (
+              <p className="text-muted italic mt-1">&ldquo;{message}&rdquo;</p>
             )}
           </div>
         ),
@@ -894,10 +1007,22 @@ async function runGateTest(
     const deadline = Math.floor(Date.now() / 1000) + 300;
     log(id, "Constructing EIP-712 typed data (MetaVerify)");
     log(id, `domain: AgentDemoVerifier v1, chainId=${net.chainId}, deadline=${deadline}`);
-    const wallet = new ethers.Wallet(privateKey);
 
-    log(id, "Signing EIP-712 with agent key (secp256k1)...");
-    const eip712Signature = await wallet.signTypedData(
+    // Use raw wallet if private key available, otherwise prompt browser wallet
+    let eip712Signer: ethers.Signer & { signTypedData: typeof ethers.Wallet.prototype.signTypedData };
+    if (privateKey) {
+      eip712Signer = new ethers.Wallet(privateKey);
+      log(id, "Signing EIP-712 with agent key (secp256k1)...");
+    } else if (window.ethereum) {
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      eip712Signer = await browserProvider.getSigner() as any;
+      log(id, "Signing EIP-712 via browser wallet...");
+    } else {
+      throw new Error("No private key or browser wallet available for EIP-712 signing.");
+    }
+
+    const eip712Signature = await eip712Signer.signTypedData(
       {
         name: "AgentDemoVerifier",
         version: "1",
@@ -1044,6 +1169,19 @@ export default function DemoPage() {
   const agentRef = useRef<SelfAgent | null>(null);
   const privateKeyRef = useRef<string>("");
   const chatUnlockedRef = useRef(false);
+  const [setupMode, setSetupMode] = useState<
+    "private-key" | "passkey" | "wallet"
+  >("private-key");
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [loadedViaPasskey, setLoadedViaPasskey] = useState(false);
+  const [passkeyWalletAddress, setPasskeyWalletAddress] = useState<string | null>(null);
+  const [passkeyHasSigningKey, setPasskeyHasSigningKey] = useState(false);
+  const [passkeyKeyInput, setPasskeyKeyInput] = useState("");
+  const [passkeyKeyError, setPasskeyKeyError] = useState("");
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState("");
 
   // Unique session ID — regenerated on every page load so the AI treats
   // each visit as a fresh encounter with no memory of prior sessions.
@@ -1051,6 +1189,10 @@ export default function DemoPage() {
 
   // Keep ref in sync so the chat callback can read current unlock state
   chatUnlockedRef.current = state.chatUnlocked;
+
+  useEffect(() => {
+    setPasskeyAvailable(isPasskeySupported());
+  }, []);
 
   const log = useCallback(
     (testId: string, message: string) => {
@@ -1081,6 +1223,12 @@ export default function DemoPage() {
 
       agentRef.current = agent;
       privateKeyRef.current = key;
+      saveAgentPrivateKey({ agentAddress: agent.address, privateKey: key });
+      setLoadedViaPasskey(false);
+      setPasskeyWalletAddress(null);
+      setPasskeyHasSigningKey(true);
+      setPasskeyKeyInput("");
+      setPasskeyKeyError("");
 
       bootLog(`Agent address: ${shortAddr(agent.address)}`);
       await delay(100);
@@ -1187,18 +1335,263 @@ export default function DemoPage() {
     }
   }, [state.privateKey, network]);
 
-  // Clean up any stale sessionStorage from previous register→demo flow
-  useEffect(() => {
-    sessionStorage.removeItem("demo-agent-key");
-    sessionStorage.removeItem("demo-agent-from-register");
-  }, []);
+  const handleLoadAgentWithPasskey = useCallback(async () => {
+    if (!passkeyAvailable) {
+      dispatch({
+        type: "SETUP_ERROR",
+        error: "Passkeys are not supported in this browser.",
+      });
+      return;
+    }
+
+    dispatch({ type: "LOADING" });
+    setPasskeyLoading(true);
+    setPasskeyHasSigningKey(false);
+    setPasskeyKeyInput("");
+    setPasskeyKeyError("");
+    const bootLog = (msg: string) => dispatch({ type: "ADD_LOG", testId: "agent", message: msg });
+
+    try {
+      bootLog("Authenticating with passkey...");
+      const { walletAddress } = await signInWithPasskey(network);
+      setPasskeyWalletAddress(walletAddress);
+      bootLog(`Passkey smart wallet: ${shortAddr(walletAddress)}`);
+
+      const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+      const registry = new ethers.Contract(network.registryAddress, REGISTRY_ABI, provider);
+
+      bootLog("Scanning registry for guardian-managed agents...");
+      const mintFilter = registry.filters.Transfer(ethers.ZeroAddress, null);
+      const latestBlock = await provider.getBlockNumber();
+      const blockWindow = 50_000;
+
+      let selected:
+        | {
+            agentId: bigint;
+            agentKey: string;
+            address: string;
+            credentials?: AgentCredentials;
+          }
+        | undefined;
+
+      for (let toBlock = latestBlock; toBlock >= 0 && !selected; toBlock -= blockWindow) {
+        const fromBlock = Math.max(0, toBlock - blockWindow + 1);
+        const mintEvents = await registry.queryFilter(mintFilter, fromBlock, toBlock);
+
+        for (let i = mintEvents.length - 1; i >= 0; i -= 1) {
+          const logEvent = mintEvents[i] as ethers.EventLog;
+          const agentId = logEvent.args[2] as bigint;
+
+          try {
+            const guardian: string = await registry.agentGuardian(agentId);
+            if (guardian.toLowerCase() !== walletAddress.toLowerCase()) continue;
+
+            const agentKey: string = await registry.agentIdToAgentKey(agentId);
+            const isVerified: boolean = await registry.isVerifiedAgent(agentKey);
+            if (!isVerified) continue;
+
+            const address = "0x" + agentKey.slice(26);
+
+            let credentials: AgentCredentials | undefined;
+            try {
+              const raw = await registry.getAgentCredentials(agentId);
+              const creds: AgentCredentials = {
+                issuingState: raw.issuingState ?? raw[0] ?? "",
+                name: raw.name ?? raw[1] ?? [],
+                nationality: raw.nationality ?? raw[3] ?? "",
+                dateOfBirth: raw.dateOfBirth ?? raw[4] ?? "",
+                gender: raw.gender ?? raw[5] ?? "",
+                expiryDate: raw.expiryDate ?? raw[6] ?? "",
+                olderThan: raw.olderThan ?? raw[7] ?? 0n,
+                ofac: raw.ofac ?? raw[8] ?? [false, false, false],
+              };
+              if (creds.nationality || creds.olderThan > 0n) credentials = creds;
+            } catch {
+              // credentials are optional
+            }
+
+            selected = { agentId, agentKey, address, credentials };
+            break;
+          } catch {
+            // Skip entries that don't expose guardian fields or were burned
+          }
+        }
+      }
+
+      if (!selected) {
+        dispatch({
+          type: "SETUP_ERROR",
+          error: "No verified guardian-managed agents found for this passkey.",
+        });
+        return;
+      }
+
+      setLoadedViaPasskey(true);
+      setPasskeyKeyError("");
+      setPasskeyKeyInput("");
+
+      // Try to recover a locally cached agent key so passkey mode can run signed tests.
+      const cachedKey =
+        getAgentPrivateKeyByAgent(selected.address) || getAgentPrivateKeyByGuardian(walletAddress);
+      let signingReady = false;
+      if (cachedKey) {
+        try {
+          const signerAgent = new SelfAgent({
+            privateKey: cachedKey,
+            registryAddress: network.registryAddress,
+            rpcUrl: network.rpcUrl,
+          });
+          if (signerAgent.address.toLowerCase() !== selected.address.toLowerCase()) {
+            throw new Error("Cached key does not match selected agent.");
+          }
+          agentRef.current = signerAgent;
+          privateKeyRef.current = cachedKey;
+          saveAgentPrivateKey({
+            agentAddress: signerAgent.address,
+            privateKey: cachedKey,
+            guardianAddress: walletAddress,
+          });
+          signingReady = true;
+          bootLog("Recovered local agent signing key. Signed tests are enabled.");
+        } catch {
+          agentRef.current = null;
+          privateKeyRef.current = "";
+        }
+      } else {
+        agentRef.current = null;
+        privateKeyRef.current = "";
+      }
+      setPasskeyHasSigningKey(signingReady);
+
+      bootLog(
+        `Loaded guardian-managed agent #${selected.agentId.toString()} (${shortAddr(selected.address)})`,
+      );
+      if (!signingReady) {
+        bootLog("Passkey mode loaded. Add this agent key once to run signed tests.");
+      }
+
+      dispatch({
+        type: "SETUP_DONE",
+        agent: {
+          address: selected.address,
+          agentKey: selected.agentKey,
+          agentId: selected.agentId.toString(),
+          isVerified: true,
+          credentials: selected.credentials,
+        },
+      });
+    } catch (err) {
+      dispatch({
+        type: "SETUP_ERROR",
+        error: err instanceof Error ? err.message : "Passkey sign-in failed",
+      });
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }, [network, passkeyAvailable]);
+
+  const handleAttachPasskeyAgentKey = useCallback(() => {
+    if (!state.agent || !loadedViaPasskey) return;
+    let key = passkeyKeyInput.trim();
+    if (!key) {
+      setPasskeyKeyError("Enter the agent private key.");
+      return;
+    }
+    if (!key.startsWith("0x")) key = `0x${key}`;
+
+    try {
+      const signerAgent = new SelfAgent({
+        privateKey: key,
+        registryAddress: network.registryAddress,
+        rpcUrl: network.rpcUrl,
+      });
+      if (signerAgent.address.toLowerCase() !== state.agent.address.toLowerCase()) {
+        throw new Error("This private key does not match the passkey-selected agent.");
+      }
+      agentRef.current = signerAgent;
+      privateKeyRef.current = key;
+      saveAgentPrivateKey({
+        agentAddress: signerAgent.address,
+        privateKey: key,
+        guardianAddress: passkeyWalletAddress || undefined,
+      });
+      setPasskeyHasSigningKey(true);
+      setPasskeyKeyInput("");
+      setPasskeyKeyError("");
+      log("agent", "Agent signing key attached. Signed tests are now enabled.");
+    } catch (err) {
+      setPasskeyHasSigningKey(false);
+      setPasskeyKeyError(
+        err instanceof Error ? err.message : "Failed to attach agent private key.",
+      );
+    }
+  }, [state.agent, loadedViaPasskey, passkeyKeyInput, network, passkeyWalletAddress, log]);
+
+  const handleConnectWallet = useCallback(async () => {
+    setWalletLoading(true);
+    setWalletError("");
+    try {
+      if (!window.ethereum) {
+        throw new Error("No wallet detected. Install MetaMask or another browser wallet.");
+      }
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+
+      // Derive agent key (simple mode: address = agent)
+      const agentKey = ethers.zeroPadValue(address, 32);
+
+      // Check on-chain
+      const rpcProvider = new ethers.JsonRpcProvider(network.rpcUrl);
+      const registry = new ethers.Contract(
+        network.registryAddress,
+        REGISTRY_ABI,
+        rpcProvider
+      );
+      const isVerified = await registry.isVerifiedAgent(agentKey);
+
+      if (!isVerified) {
+        throw new Error(
+          "This wallet is not registered as a verified agent. " +
+          "Register first using Simple (Verified Wallet) mode."
+        );
+      }
+
+      // Create SelfAgent with wallet signer
+      const agent = new SelfAgent({ signer, network: network.isTestnet ? "testnet" : "mainnet" });
+      agentRef.current = agent;
+      privateKeyRef.current = ""; // no raw key — wallet signs directly
+      setWalletAddress(address);
+
+      // Load agent info
+      const agentId = await registry.getAgentId(agentKey);
+
+      dispatch({
+        type: "SETUP_DONE",
+        agent: {
+          address,
+          agentKey,
+          agentId: agentId.toString(),
+          isVerified: true,
+        },
+      });
+    } catch (err) {
+      setWalletError(err instanceof Error ? err.message : "Failed to connect wallet");
+    } finally {
+      setWalletLoading(false);
+    }
+  }, [network]);
 
   // ---- Tests ----
 
   const runAllTests = useCallback(async () => {
     const agent = agentRef.current;
     const pk = privateKeyRef.current;
-    if (!agent || !state.agent || !pk) {
+    const hasWallet = !!walletAddress;
+    if (!state.agent || !agent || (!pk && !hasWallet)) {
+      const setupError = loadedViaPasskey
+        ? "Passkey mode needs this agent signing key. Add it once to run signed tests."
+        : "No agent loaded — enter a private key above";
       dispatch({ type: "START_TESTS" });
       for (const id of ["service", "peer", "gate"]) {
         dispatch({
@@ -1207,7 +1600,7 @@ export default function DemoPage() {
           state: {
             status: "error",
             steps: makeSteps(["Loading agent..."], 0, undefined, true),
-            error: "No agent loaded \u2014 enter a private key above",
+            error: setupError,
           },
         });
       }
@@ -1224,7 +1617,7 @@ export default function DemoPage() {
       runPeerTest(agent, agentLabel, dispatch, log, network),
       runGateTest(agent, pk, agentLabel, dispatch, log, network),
     ]);
-  }, [state.agent, log, network]);
+  }, [state.agent, loadedViaPasskey, walletAddress, log, network]);
 
   const runFakeAgent = useCallback(async () => {
     const fakeWallet = ethers.Wallet.createRandom();
@@ -1337,66 +1730,167 @@ export default function DemoPage() {
           Test Self Agent ID integration end-to-end. Load your registered agent,
           then run real verification tests against on-chain contracts and service endpoints.
         </p>
+        <p className="text-xs text-subtle max-w-lg mx-auto mt-2">
+          Don&apos;t have an agent yet?{" "}
+          <a href="/register" className="text-accent hover:text-accent-2 underline underline-offset-2">Register via dApp</a>
+          {" "}or use the{" "}
+          <a href="/cli" className="text-accent hover:text-accent-2 underline underline-offset-2">CLI</a>
+          {" "}for terminal and agent-guided workflows.
+        </p>
       </div>
 
       {/* Setup / Agent Info Card */}
       {!state.agent ? (
         <Card className="max-w-md mx-auto">
           <h2 className="font-semibold mb-4">Load Your Agent</h2>
-          <p className="text-xs text-muted mb-4">
-            Enter the private key of a registered agent. The key stays in your browser
-            and is never sent to the server.
-          </p>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleLoadAgent();
-            }}
-            className="space-y-3"
-          >
-            <div className="relative">
-              <input
-                type={state.showKey ? "text" : "password"}
-                value={state.privateKey}
-                onChange={(e) => dispatch({ type: "SET_KEY", key: e.target.value })}
-                placeholder="0x... (agent private key)"
-                className="w-full px-4 py-3 pr-10 bg-surface-2 border border-border rounded-lg focus:border-accent focus:ring-0 font-mono text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "TOGGLE_KEY" })}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
-              >
-                {state.showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-
-            {state.setupError && (
-              <div className="flex items-start gap-2 text-accent-error text-sm">
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                <span>{state.setupError}</span>
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={state.loading || !state.privateKey.trim()}
-              className="w-full"
+          <div className="flex gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => setSetupMode("private-key")}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1.5 ${
+                setupMode === "private-key"
+                  ? "bg-surface-2 border-accent text-foreground"
+                  : "bg-surface-1 border-border text-muted hover:text-foreground"
+              }`}
             >
-              {state.loading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <Rocket size={16} />
-                  Load Agent
-                </>
+              <KeyRound className="w-3.5 h-3.5" />
+              Private Key
+            </button>
+            <button
+              type="button"
+              onClick={() => passkeyAvailable && setSetupMode("passkey")}
+              disabled={!passkeyAvailable}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1.5 ${
+                !passkeyAvailable
+                  ? "bg-surface-1 border-border text-muted/40 cursor-not-allowed"
+                  : setupMode === "passkey"
+                    ? "bg-surface-2 border-accent-success text-foreground"
+                    : "bg-surface-1 border-border text-muted hover:text-foreground"
+              }`}
+            >
+              <Fingerprint className="w-3.5 h-3.5" />
+              Passkey
+            </button>
+            <button
+              type="button"
+              onClick={() => setSetupMode("wallet")}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1.5 ${
+                setupMode === "wallet"
+                  ? "bg-surface-2 border-accent text-foreground"
+                  : "bg-surface-1 border-border text-muted hover:text-foreground"
+              }`}
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              Wallet
+            </button>
+          </div>
+
+          {setupMode === "private-key" ? (
+            <>
+              <p className="text-xs text-muted mb-4">
+                Enter the private key of a registered agent. The key stays in your browser
+                and is never sent to the server.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleLoadAgent();
+                }}
+                className="space-y-3"
+              >
+                <div className="relative">
+                  <input
+                    type={state.showKey ? "text" : "password"}
+                    value={state.privateKey}
+                    onChange={(e) => dispatch({ type: "SET_KEY", key: e.target.value })}
+                    placeholder="0x... (agent private key)"
+                    className="w-full px-4 py-3 pr-10 bg-surface-2 border border-border rounded-lg focus:border-accent focus:ring-0 font-mono text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: "TOGGLE_KEY" })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                  >
+                    {state.showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={state.loading || !state.privateKey.trim()}
+                  className="w-full"
+                >
+                  {state.loading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket size={16} />
+                      Load Agent
+                    </>
+                  )}
+                </Button>
+              </form>
+            </>
+          ) : setupMode === "passkey" ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted">
+                Sign in with your passkey to load the guardian-managed agent tied to your smart wallet.
+              </p>
+              <Button
+                type="button"
+                onClick={handleLoadAgentWithPasskey}
+                disabled={state.loading || passkeyLoading || !passkeyAvailable}
+                className="w-full"
+              >
+                {passkeyLoading ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint size={16} />
+                    Sign in with Passkey
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-muted mb-4">
+                Connect your browser wallet to load a Simple (Verified Wallet)
+                mode agent. Your wallet address is your agent identity.
+              </p>
+              {walletError && (
+                <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4">
+                  <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-red-400">{walletError}</p>
+                </div>
               )}
-            </Button>
-          </form>
+              <Button
+                onClick={handleConnectWallet}
+                disabled={walletLoading}
+                className="w-full"
+              >
+                {walletLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Wallet className="w-4 h-4 mr-2" />
+                )}
+                {walletLoading ? "Connecting..." : "Connect Wallet"}
+              </Button>
+            </>
+          )}
+
+          {state.setupError && (
+            <div className="flex items-start gap-2 text-accent-error text-sm mt-3">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{state.setupError}</span>
+            </div>
+          )}
         </Card>
       ) : (
         <Card variant="success" className="max-w-md mx-auto">
@@ -1404,7 +1898,17 @@ export default function DemoPage() {
             <ShieldCheck size={20} className="text-accent-success" />
             <span className="font-semibold">Agent Loaded</span>
             <button
-              onClick={() => dispatch({ type: "RESET" })}
+              onClick={() => {
+                dispatch({ type: "RESET" });
+                setLoadedViaPasskey(false);
+                setPasskeyWalletAddress(null);
+                setPasskeyHasSigningKey(false);
+                setPasskeyKeyInput("");
+                setPasskeyKeyError("");
+                setWalletAddress(null);
+                setWalletError("");
+                setSetupMode("private-key");
+              }}
               className="ml-auto text-xs text-muted hover:text-foreground"
             >
               Change
@@ -1421,6 +1925,37 @@ export default function DemoPage() {
               <span className="text-muted">Agent ID</span>
               <span className="font-mono">#{state.agent.agentId}</span>
             </div>
+            {loadedViaPasskey && (
+              <div className="text-xs text-muted pt-1 border-t border-border/60 mt-2">
+                Loaded via passkey
+                {passkeyWalletAddress ? ` (${shortAddr(passkeyWalletAddress)})` : ""}.
+                {passkeyHasSigningKey
+                  ? " Local signing key found. Signed tests are enabled."
+                  : " Add this agent key once to run signed tests."}
+              </div>
+            )}
+            {loadedViaPasskey && !passkeyHasSigningKey && (
+              <div className="mt-3 pt-3 border-t border-border/60 space-y-2">
+                <p className="text-xs text-muted">
+                  Enter this agent&apos;s private key once. It will be cached in this browser for passkey demo sessions.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={passkeyKeyInput}
+                    onChange={(e) => setPasskeyKeyInput(e.target.value)}
+                    placeholder="0x... (agent private key)"
+                    className="flex-1 px-3 py-2 bg-surface-2 border border-border rounded text-xs font-mono focus:border-accent focus:ring-0"
+                  />
+                  <Button type="button" size="sm" onClick={handleAttachPasskeyAgentKey}>
+                    Attach Key
+                  </Button>
+                </div>
+                {passkeyKeyError && (
+                  <p className="text-xs text-accent-error">{passkeyKeyError}</p>
+                )}
+              </div>
+            )}
             {state.agent.credentials && (() => {
               const badges = buildCredentialBadges(state.agent.credentials!).filter(b => b.trim());
               return badges.length > 0 ? (
@@ -1439,7 +1974,13 @@ export default function DemoPage() {
       <div className="flex items-center justify-center gap-3">
         <Button
           onClick={runAllTests}
-          disabled={state.loading || Object.values(state.tests).some((t) => t.status === "running")}
+          disabled={
+            state.loading ||
+            Object.values(state.tests).some((t) => t.status === "running") ||
+            !state.agent ||
+            !agentRef.current ||
+            (!privateKeyRef.current && !walletAddress)
+          }
           size="lg"
         >
           {Object.values(state.tests).some((t) => t.status === "running") ? (
@@ -1464,6 +2005,11 @@ export default function DemoPage() {
           Test with Fake Agent
         </Button>
       </div>
+      {loadedViaPasskey && !passkeyHasSigningKey && (
+        <p className="text-xs text-subtle text-center">
+          Passkey mode is active. Attach this agent&apos;s private key once to enable signed integration tests.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {TESTS.filter((t) => t.id !== "chat").map((test) => (

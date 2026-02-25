@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import React from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 
@@ -50,7 +50,14 @@ export function PrivyBridge({ children }: { children: ReactNode }) {
   const { login, ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
 
-  const value: PrivyState = { login, ready, authenticated, wallets };
+  // Stabilise the context value so consumers only re-render when
+  // meaningful data changes, not on every PrivyBridge render.
+  const walletsKey = wallets.map((w: { address: string }) => w.address).join();
+  const value = useMemo<PrivyState>(
+    () => ({ login, ready, authenticated, wallets }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [login, ready, authenticated, walletsKey],
+  );
 
   return React.createElement(PrivyStateContext.Provider, { value }, children);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ethers } from "ethers";
@@ -84,12 +84,18 @@ export default function RegisterPage() {
   const [privyWalletAddress, setPrivyWalletAddress] = useState<string | null>(null);
 
   const { login: privyLogin, ready: privyReady, authenticated: privyAuthenticated, wallets: privyWallets } = usePrivyState();
+  const pendingRedirect = useRef(false);
 
   useEffect(() => {
     setPasskeySupported(isPasskeySupported());
-    // Restore mode after Privy OAuth redirect (deferred to avoid hydration mismatch)
+    // Restore mode after Privy OAuth redirect (deferred to avoid hydration mismatch).
+    // Consume and clear immediately — the ref carries the signal to the registration useEffect.
     const saved = sessionStorage.getItem("register-mode");
-    if (saved === "privy") setMode("privy");
+    if (saved === "privy") {
+      sessionStorage.removeItem("register-mode");
+      pendingRedirect.current = true;
+      setMode("privy");
+    }
   }, []);
 
   // Disclosure selection state
@@ -361,16 +367,12 @@ export default function RegisterPage() {
       (w: { walletClientType: string }) => w.walletClientType === "privy"
     );
     if (!embedded) return;
-
-    // After a redirect, loading is false — detect via sessionStorage flag
-    const pendingFromRedirect = sessionStorage.getItem("register-mode") === "privy";
-    if (!loading && !pendingFromRedirect) return;
+    if (!loading && !pendingRedirect.current) return;
 
     // Already completed registration (wallet address captured) — don't re-run
     if (privyWalletAddress) return;
 
-    // Clear the sessionStorage flag so this doesn't re-trigger
-    sessionStorage.removeItem("register-mode");
+    pendingRedirect.current = false;
     if (!loading) setLoading(true);
 
     const completePrivyRegistration = async () => {

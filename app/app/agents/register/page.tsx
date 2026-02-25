@@ -1004,7 +1004,7 @@ export default function RegisterPage() {
             </p>
             <div className="flex gap-2">
               <a
-                href="https://apps.apple.com/us/app/self/id6446136401"
+                href="https://apps.apple.com/us/app/self-zk-passport-identity/id6478563710"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 border border-border rounded-lg text-xs font-medium hover:border-border-strong transition-colors"

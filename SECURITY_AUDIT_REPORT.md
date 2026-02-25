@@ -153,15 +153,15 @@ Reviewer mode: Read-only audit (no code modifications)
 - Recommendation: Enforce minimum secret length/entropy at startup and document `AA_PROXY_TOKEN_SECRET` requirements in `.env.example`.
 - CVSS: N/A
 
-### 13. Informational: Dependency and test posture risk
+### 13. Informational: Dependency and security test posture still need hardening depth
 - Severity: Informational
 - Location:
-  - `app/package.json:13`
-  - `app/lib/test/session-token.test.ts:1`
-- Description: Core trust boundary depends on `@selfxyz/agent-sdk` alpha (`0.1.0-alpha.1`), and API security test coverage is effectively absent beyond session-token tests.
-- Attack Scenario: Undetected regressions in auth/replay/input validation.
+  - `app/package.json:15`
+  - `app/tests/api/*.test.ts`
+- Description: Core trust boundary depends on `@selfxyz/agent-sdk` alpha (`0.1.0-alpha.1`). The branch now includes broad API tests, but many security-critical paths are heavily mocked, so regressions in shared auth/replay/rate-limit primitives may still slip through.
+- Attack Scenario: Shared security helper changes can pass route tests while breaking real replay/token/timeout behavior in production.
 - Impact: Increased latent defect risk.
-- Recommendation: Pin audited stable versions and add security regression tests for auth bypass, replay, SSRF, and body-size handling.
+- Recommendation: Pin audited stable versions and expand low-mock security tests for `aaProxyAuth`, `replayGuard`, `securityStore`, byte-accurate body limits, and timeout behavior.
 - CVSS: N/A
 
 ## Cross-Review Additions (Second Security Review Reconciliation)
@@ -313,9 +313,10 @@ Goal: Compromise identity trust or abuse infrastructure
 - [ ] Add possession-proof requirement before deregistration session issuance.
 - [ ] Document and validate all required secrets (`SESSION_SECRET`, `AA_PROXY_TOKEN_SECRET`, `PIMLICO_API_KEY`).
 - [ ] Move per-instance demo limiters to shared Upstash state.
-- [ ] Add security-focused automated tests before refactors/fixes.
+- [x] Add security-focused automated tests before refactors/fixes.
 
 ## Notes
 
 - No code changes were made in this audit pass.
 - Known architecture decisions from the prompt were respected (stateless sessions, fallback behavior, etc.) unless a specific exploit path was identified.
+- This report has been reconciled with subsequent branch test additions; finding #13 reflects current test posture rather than pre-test baseline.

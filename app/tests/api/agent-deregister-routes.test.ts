@@ -334,6 +334,77 @@ describe("agent deregister callback route", () => {
     );
   });
 
+  // SECURITY_GAP: Finding #6 — callback does not validate session type matches endpoint
+  it("rejects token with wrong session type (register on deregister endpoint)", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "register", stage: "pending" },
+      secret: "session-secret",
+    });
+    const { POST } = await loadDeregisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/deregister/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({ proof: "ok" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Token is not for a deregistration session" });
+  });
+
+  it("short-circuits with 200 for already-completed session", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "deregister", stage: "completed", agentAddress: "0xdone", agentId: 88 },
+      secret: "session-secret",
+    });
+    const { POST } = await loadDeregisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/deregister/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({ proof: "ok" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHelpers.sessionResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "completed" }),
+      "session-secret",
+      expect.objectContaining({ agentAddress: "0xdone", agentId: 88 }),
+    );
+  });
+
+  it("returns 400 for empty callback body", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "deregister", stage: "pending", agentAddress: "0xabc", agentId: 1 },
+      secret: "session-secret",
+    });
+    const { POST } = await loadDeregisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/deregister/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Empty callback payload" });
+  });
+
+  it("returns 410 for expired session", async () => {
+    mockHelpers.decryptAndValidateSession.mockImplementation(() => {
+      throw new Error("token expired");
+    });
+    const { POST } = await loadDeregisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/deregister/callback?token=t", {
+        method: "POST",
+      }),
+    );
+
+    expect(res.status).toBe(410);
+    expect(await jsonBody(res)).toEqual({ error: "Session expired" });
+  });
+
   it("returns 204 for OPTIONS", async () => {
     const { OPTIONS } = await loadDeregisterCallbackRoute();
     const res = await OPTIONS();

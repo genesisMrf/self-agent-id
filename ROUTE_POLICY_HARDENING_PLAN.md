@@ -1,7 +1,7 @@
 # RoutePolicy Hardening Plan (Next.js App Router)
 
 Date: 2026-02-25  
-Status: Proposed (implementation starts after test suite lands)
+Status: Phase 0 complete (205 tests, 14 files); ready for Phase 1
 
 ## 1. Why this is worth it here
 
@@ -135,9 +135,10 @@ Instead, put those in focused domain helpers:
 
 ## 9. Migration plan (phased)
 
-### Phase 0: Tests first (current priority)
+### Phase 0: Tests first (complete)
 1. Lock behavior with integration tests per route family.
 2. Add negative tests: auth bypass, replay, oversized body, invalid content-type, timeout handling.
+3. **Important:** Add explicit gap-tracking markers in Phase 0 tests for known security issues (e.g., `body.length` char-count instead of byte-count, wildcard CORS, missing MCP auth), using comments like `// SECURITY_GAP: Finding #N — ...`. These tests may assert **current insecure behavior** during baseline capture. When the corresponding hardening fix lands, the test should fail and then be updated to assert the new secure behavior; replace the marker with `// SECURITY_FIX: Finding #N — hardened in Phase N`.
 
 ### Phase 1: Build primitives without changing route behavior
 1. Implement `createApiRoute` + body/error/timeout helpers.
@@ -176,6 +177,6 @@ Instead, put those in focused domain helpers:
 3. Risk: Overly strict defaults break clients.
    - Mitigation: opt-in per family during migration, then tighten defaults.
 
-## 12. Recommended next step after tests are ready
+## 12. Recommended next step
 
 Start with Phase 2 (AA routes) as the pilot migration. They are compact, high-risk, and ideal for validating the RoutePolicy pattern before touching registration state flows.

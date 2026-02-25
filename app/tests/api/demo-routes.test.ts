@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonBody, makeNextRequest } from "./test-utils";
 
 const HEADERS = {
@@ -174,8 +174,9 @@ async function loadDemoAgentToAgentRoute(withDemoKey = true) {
   vi.resetModules();
   installCommonMocks();
   if (withDemoKey) {
-    process.env.DEMO_AGENT_PRIVATE_KEY_SEPOLIA = "0xdemokey";
+    vi.stubEnv("DEMO_AGENT_PRIVATE_KEY_SEPOLIA", "0xdemokey");
   } else {
+    vi.stubEnv("DEMO_AGENT_PRIVATE_KEY_SEPOLIA", "");
     delete process.env.DEMO_AGENT_PRIVATE_KEY_SEPOLIA;
   }
   return import("@/app/api/demo/agent-to-agent/route");
@@ -185,8 +186,9 @@ async function loadDemoChainVerifyRoute(withRelayer = true) {
   vi.resetModules();
   installCommonMocks();
   if (withRelayer) {
-    process.env.RELAYER_PRIVATE_KEY = "0xrelayer";
+    vi.stubEnv("RELAYER_PRIVATE_KEY", "0xrelayer");
   } else {
+    vi.stubEnv("RELAYER_PRIVATE_KEY", "");
     delete process.env.RELAYER_PRIVATE_KEY;
   }
   return import("@/app/api/demo/chain-verify/route");
@@ -258,12 +260,49 @@ describe("demo verify route", () => {
       error: "Replay detected",
     });
   });
+
+  it("returns verification result with error field when valid is false", async () => {
+    mockVerify.mockResolvedValue({
+      valid: false,
+      error: "Agent not registered",
+      agentAddress: undefined,
+      agentKey: undefined,
+      agentId: 0n,
+      agentCount: 0n,
+      credentials: undefined,
+    });
+    const { POST } = await loadDemoVerifyRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/demo/verify", {
+        method: "POST",
+        headers: {
+          [HEADERS.SIGNATURE]: "0xsig",
+          [HEADERS.TIMESTAMP]: "1700000000000",
+        },
+      }),
+    );
+
+    // Documents current behavior: returns 200 with valid=false and error field
+    expect(res.status).toBe(200);
+    const body = await jsonBody<{ valid: boolean; error: string }>(res);
+    expect(body.valid).toBe(false);
+    expect(body.error).toBe("Agent not registered");
+  });
 });
 
 describe("demo chat route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setDefaultMocks();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => NextResponse.json({ response: "ok" })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("rejects invalid JSON payloads", async () => {
@@ -296,14 +335,6 @@ describe("demo chat route", () => {
   });
 
   it("forwards unsigned requests as anonymous", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        NextResponse.json({
-          response: "ok",
-        }),
-      ),
-    );
     const { POST } = await loadDemoChatRoute();
     const res = await POST(
       makeNextRequest("https://example.com/api/demo/chat", {
@@ -320,7 +351,89 @@ describe("demo chat route", () => {
         method: "POST",
       }),
     );
-    vi.unstubAllGlobals();
+  });
+
+  it("forwards signed + verified requests with agentAddress context", async () => {
+    const { POST } = await loadDemoChatRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/demo/chat", {
+        method: "POST",
+        headers: {
+          [HEADERS.SIGNATURE]: "0xsig",
+          [HEADERS.TIMESTAMP]: "1700000000000",
+        },
+        body: '{"query":"hello","session_id":"s1"}',
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await jsonBody(res)).toEqual({ response: "ok" });
+    // Should pass the verified agent address (from mock), not "anonymous"
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      "http://127.0.0.1:8090/agent",
+      expect.objectContaining({
+        body: expect.stringContaining("0xcaller"),
+      }),
+    );
+  });
+
+  it("returns 403 when verification fails on signed request", async () => {
+    mockVerify.mockResolvedValue({
+      valid: false,
+      error: "Bad signature",
+    });
+    const { POST } = await loadDemoChatRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/demo/chat", {
+        method: "POST",
+        headers: {
+          [HEADERS.SIGNATURE]: "0xbadsig",
+          [HEADERS.TIMESTAMP]: "1700000000000",
+        },
+        body: '{"query":"hello"}',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(await jsonBody(res)).toEqual({ error: "Bad signature" });
+  });
+
+  it("returns 409 when replay is detected on signed request", async () => {
+    mockCheckAndRecordReplay.mockResolvedValue({
+      ok: false,
+      error: "Replay detected",
+    });
+    const { POST } = await loadDemoChatRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/demo/chat", {
+        method: "POST",
+        headers: {
+          [HEADERS.SIGNATURE]: "0xsig",
+          [HEADERS.TIMESTAMP]: "1700000000000",
+        },
+        body: '{"query":"hello"}',
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect(await jsonBody(res)).toEqual({ error: "Replay detected" });
+  });
+
+  it("returns 503 when upstream fetch throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => { throw new Error("connection refused"); }),
+    );
+    const { POST } = await loadDemoChatRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/demo/chat", {
+        method: "POST",
+        body: '{"query":"hello"}',
+      }),
+    );
+
+    expect(res.status).toBe(503);
+    expect(await jsonBody(res)).toEqual({ error: "LangChain service unavailable" });
   });
 });
 
@@ -387,6 +500,10 @@ describe("demo agent-to-agent route", () => {
     setDefaultMocks();
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns 500 when demo agent key is missing", async () => {
     const { POST } = await loadDemoAgentToAgentRoute(false);
     const res = await POST(
@@ -451,6 +568,10 @@ describe("demo chain-verify route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setDefaultMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("returns 503 when relayer is not configured", async () => {

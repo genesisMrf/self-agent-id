@@ -438,6 +438,79 @@ describe("agent register callback route", () => {
     );
   });
 
+  // SECURITY_GAP: Finding #6 — callback does not validate session type matches endpoint
+  it("rejects token with wrong session type (deregister on register endpoint)", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "deregister", stage: "pending" },
+      secret: "session-secret",
+    });
+    const { POST } = await loadRegisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/register/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({ proof: "ok" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Token is not for a registration session" });
+  });
+
+  it("short-circuits with 200 for already-completed session", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "register", stage: "completed", agentAddress: "0xdone", agentId: 99 },
+      secret: "session-secret",
+    });
+    const { POST } = await loadRegisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/register/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({ proof: "ok" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockHelpers.sessionResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "completed" }),
+      "session-secret",
+      expect.objectContaining({ agentAddress: "0xdone", agentId: 99 }),
+    );
+  });
+
+  it("returns 400 for empty callback body", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "register", stage: "pending", agentAddress: "0xabc" },
+      secret: "session-secret",
+    });
+    const { POST } = await loadRegisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/register/callback?token=t", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Empty callback payload" });
+  });
+
+  it("returns 400 for invalid JSON body", async () => {
+    mockHelpers.decryptAndValidateSession.mockReturnValue({
+      session: { type: "register", stage: "pending", agentAddress: "0xabc" },
+      secret: "session-secret",
+    });
+    const { POST } = await loadRegisterCallbackRoute();
+    const res = await POST(
+      makeNextRequest("https://example.com/api/agent/register/callback?token=t", {
+        method: "POST",
+        body: "{not valid json",
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Invalid callback payload" });
+  });
+
   it("returns preflight response for OPTIONS", async () => {
     const { OPTIONS } = await loadRegisterCallbackRoute();
     const res = await OPTIONS();

@@ -15,12 +15,13 @@ async function loadRoute(
 
   if (opts && "pimlicoApiKey" in opts) {
     if (opts.pimlicoApiKey === undefined) {
+      vi.stubEnv("PIMLICO_API_KEY", "");
       delete process.env.PIMLICO_API_KEY;
     } else {
-      process.env.PIMLICO_API_KEY = opts.pimlicoApiKey;
+      vi.stubEnv("PIMLICO_API_KEY", opts.pimlicoApiKey);
     }
   } else {
-    process.env.PIMLICO_API_KEY = "pimlico-test-key";
+    vi.stubEnv("PIMLICO_API_KEY", "pimlico-test-key");
   }
 
   vi.doMock("@/lib/rateLimit", () => ({
@@ -54,6 +55,7 @@ describe("AA token route", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("rejects when origin validation fails", async () => {
@@ -228,6 +230,130 @@ describe("AA bundler route", () => {
     expect(res.status).toBe(201);
     await expect(res.text()).resolves.toBe('{"upstream":"ok"}');
   });
+
+  it("returns 429 when bundler rate limit is exceeded", async () => {
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      retryAfterMs: 3000,
+    });
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(429);
+    expect(await jsonBody(res)).toEqual({
+      error: "Rate limit exceeded",
+      retryAfterMs: 3000,
+    });
+  });
+
+  // SECURITY_GAP: Finding A2 — body.length uses character count, not byte count.
+  // Multi-byte characters can bypass the 200k limit. When hardened to use
+  // Buffer.byteLength, this test should fail and be updated.
+  it("enforces max body size by character count", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: "x".repeat(200001),
+      }),
+    );
+
+    expect(res.status).toBe(413);
+    expect(await jsonBody(res)).toEqual({ error: "Request too large" });
+  });
+
+  it("rejects invalid JSON body", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: "{bad json",
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Invalid JSON body" });
+  });
+
+  it("rejects batch (array) requests", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: JSON.stringify([{ jsonrpc: "2.0", method: "eth_chainId", params: [] }]),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Batch requests are not supported" });
+  });
+
+  it("rejects invalid jsonrpc field", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: JSON.stringify({ jsonrpc: "1.0", method: "eth_chainId", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Invalid JSON-RPC request" });
+  });
+
+  it("rejects non-array params", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: "bad" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await jsonBody(res)).toEqual({ error: "Invalid params" });
+  });
+
+  it("rejects when origin validation fails", async () => {
+    mockValidateAllowedOrigin.mockReturnValue({ ok: false, error: "Origin check failed" });
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(await jsonBody(res)).toEqual({ error: "Origin check failed" });
+  });
+
+  it("rejects when token verification fails", async () => {
+    mockVerifyAaProxyToken.mockReturnValue({ ok: false, error: "Invalid AA token" });
+    const { POST } = await loadRoute("@/app/api/aa/bundler/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/bundler?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "bad-token" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    expect(await jsonBody(res)).toEqual({ error: "Invalid AA token" });
+  });
 });
 
 describe("AA paymaster route", () => {
@@ -320,5 +446,67 @@ describe("AA paymaster route", () => {
     );
     expect(res.status).toBe(200);
     await expect(res.text()).resolves.toBe('{"result":"ok"}');
+  });
+
+  it("returns 503 when Pimlico key is missing", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/paymaster/route", {
+      pimlicoApiKey: undefined,
+    });
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/paymaster?chainId=42220", {
+        method: "POST",
+      }),
+    );
+
+    expect(res.status).toBe(503);
+    expect(await jsonBody(res)).toEqual({ error: "Paymaster not configured" });
+  });
+
+  it("requires a proxy token header", async () => {
+    const { POST } = await loadRoute("@/app/api/aa/paymaster/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/paymaster?chainId=42220", {
+        method: "POST",
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    expect(await jsonBody(res)).toEqual({ error: "Missing AA proxy token" });
+  });
+
+  it("rejects when origin validation fails", async () => {
+    mockValidateAllowedOrigin.mockReturnValue({ ok: false, error: "Origin check failed" });
+    const { POST } = await loadRoute("@/app/api/aa/paymaster/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/paymaster?chainId=42220", {
+        method: "POST",
+        body: JSON.stringify({ jsonrpc: "2.0", method: "pm_getPaymasterData", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(await jsonBody(res)).toEqual({ error: "Origin check failed" });
+  });
+
+  it("returns 429 when paymaster rate limit is exceeded", async () => {
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      retryAfterMs: 4000,
+    });
+    const { POST } = await loadRoute("@/app/api/aa/paymaster/route");
+    const res = await POST(
+      makeNextRequest("https://example.com/api/aa/paymaster?chainId=42220", {
+        method: "POST",
+        headers: { "x-aa-proxy-token": "ok-token" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "pm_getPaymasterData", params: [] }),
+      }),
+    );
+
+    expect(res.status).toBe(429);
+    expect(await jsonBody(res)).toEqual({
+      error: "Rate limit exceeded",
+      retryAfterMs: 4000,
+    });
   });
 });

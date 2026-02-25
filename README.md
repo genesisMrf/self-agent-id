@@ -709,13 +709,29 @@ Session stages: `initialized` → `handoff_opened` → `callback_received` → `
 
 The [MCP server](https://github.com/selfxyz/self-agent-id-mcp) gives AI coding agents direct access to Self Agent ID through the [Model Context Protocol](https://modelcontextprotocol.io/). It works with Claude Code, Cursor, Windsurf, Codex, and any MCP-compatible client.
 
-### Install
+### Remote MCP (Streamable HTTP)
+
+Connect any MCP-compatible client directly via URL — no local install required:
+
+```json
+{
+  "mcpServers": {
+    "self-agent-id": {
+      "url": "https://self-agent-id.vercel.app/api/mcp"
+    }
+  }
+}
+```
+
+Works with Claude Desktop, Cursor, Windsurf, and any client supporting Streamable HTTP transport.
+
+### Local MCP (stdio)
+
+For local/offline use, run the MCP server directly:
 
 ```bash
 npx @selfxyz/mcp-server
 ```
-
-### Configuration
 
 **Claude Code** (`~/.claude.json` or project `.mcp.json`):
 

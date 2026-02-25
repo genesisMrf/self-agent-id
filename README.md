@@ -1,10 +1,10 @@
 # Self Agent ID
 
 [![npm](https://img.shields.io/npm/v/@selfxyz/agent-sdk?label=npm)](https://www.npmjs.com/package/@selfxyz/agent-sdk)
-[![PyPI](https://img.shields.io/pypi/v/selfxyz-agent-sdk)](https://pypi.org/project/selfxyz-agent-sdk/)
-[![crates.io](https://img.shields.io/crates/v/self-agent-sdk)](https://crates.io/crates/self-agent-sdk)
+[![PyPI](https://img.shields.io/pypi/v/selfxyz-agent-sdk?label=pypi)](https://pypi.org/project/selfxyz-agent-sdk/)
+[![crates.io](https://img.shields.io/crates/v/self-agent-sdk?label=crates.io)](https://crates.io/crates/self-agent-sdk)
 [![MCP](https://img.shields.io/badge/MCP-remote-blue)](https://self-agent-id.vercel.app/api/mcp)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: BUSL--1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 
 Proof-of-human identity for AI agents on Celo.
 
@@ -47,6 +47,12 @@ const verifier = SelfAgentVerifier.create()
 
 app.use("/api", verifier.auth());
 ```
+
+### Quickstart Prerequisites (Important)
+
+1. Success-path verification requires an agent key that is already registered on-chain.
+2. If the key is not registered, a protected request is expected to fail with `401 Agent not verified on-chain`.
+3. Ensure signer network matches verifier network (`mainnet` vs `testnet`) before debugging signatures.
 
 ### Run the web app locally
 
@@ -353,6 +359,8 @@ Every signed request includes three headers:
 | `x-self-agent-address` | Agent's Ethereum address |
 | `x-self-agent-signature` | ECDSA signature of `keccak256(timestamp + METHOD + path + bodyHash)` |
 | `x-self-agent-timestamp` | Unix timestamp in milliseconds |
+
+> **Critical integration note**: verify against the exact request bytes received by your server. If middleware rewrites or reserializes JSON before verification, signatures can fail even when the client is correct.
 
 ### 6.2 Service-Side: `SelfAgentVerifier`
 
@@ -1075,6 +1083,14 @@ Agent                    Relayer                  Contract
 - Timestamp freshness check (default: 5 minutes) prevents old signatures.
 - Each agent has a monotonic nonce in the EIP-712 demo contract.
 
+### Verification Failure Drills (Recommended)
+
+Use these deterministic checks to validate your service integration:
+
+1. Tamper drill: sign body `A`, send body `B` with the same auth headers. Expected: signature failure (`401 Invalid signature`).
+2. Expired drill: send a timestamp older than your configured `maxAge`. Expected: freshness failure (`401 Timestamp expired or invalid`).
+3. Replay drill: submit the exact same signed request twice. Expected: first accepted, second rejected when replay protection is enabled.
+
 ### Rate Limiting
 
 - SDK verifiers support per-agent sliding-window rate limits.
@@ -1281,6 +1297,13 @@ cd python-sdk && pip install -e ".[dev]" && pytest
 cd rust-sdk && cargo test
 ```
 
+### Verification Smoke Checklist (Before Demos / Releases)
+
+1. Build and test all changed components.
+2. Start your verifier service and confirm health endpoint.
+3. Run one registered-agent success request.
+4. Run at least two failure drills (`tamper`, `expired`, or `replay`) and confirm expected status/errors.
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
@@ -1306,4 +1329,18 @@ See the [`examples/`](examples/) directory:
 
 ## License
 
-MIT
+Business Source License 1.1 (`BUSL-1.1`).
+
+- Source-available with a non-commercial additional use grant.
+- Commercial use requires a separate written license from Social Connect Labs, Inc.
+- Converts to Apache-2.0 on 2029-06-11 (see [LICENSE](LICENSE)).
+- Path override: `contracts/**` uses `MIT` (via SPDX headers).
+- Path override: `examples/**` uses `MIT` (via SPDX headers).
+
+### License Header Tooling
+
+- Check duplicate headers: `python3 scripts/check-duplicate-headers.py`
+- Check formatting/presence: `python3 scripts/check-license-headers.py`
+- Auto-fix headers: `python3 scripts/check-license-headers.py --fix`
+- Run both checks: `python3 scripts/lint-headers.py`
+- Install git pre-commit hook: `./scripts/install-git-hooks.sh`

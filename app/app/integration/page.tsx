@@ -73,6 +73,12 @@ export default function IntegrationPage() {
             <code className="bg-surface-2 font-mono text-accent-2 px-3 py-1.5 rounded text-xs">
               cargo add self-agent-sdk
             </code>
+            <a
+              href="#mcp"
+              className="bg-surface-2 font-mono text-purple-400 px-3 py-1.5 rounded text-xs hover:bg-surface-2/80 transition-colors"
+            >
+              mcp &middot; @selfxyz/mcp-server
+            </a>
           </div>
         </div>
       </section>
@@ -88,6 +94,10 @@ export default function IntegrationPage() {
             These code snippets are for <strong className="text-foreground">service developers</strong> who want to verify
             agents in their applications. Pre-filled with the deployed contract address for{" "}
             <strong className="text-foreground">{network.label}</strong>.
+          </p>
+          <p className="text-xs text-muted">
+            Smart contracts are currently deployed on <strong className="text-foreground">Celo</strong> (mainnet &amp; Sepolia testnet).
+            Multichain support is coming soon.
           </p>
 
           <div className="flex gap-2 flex-wrap">

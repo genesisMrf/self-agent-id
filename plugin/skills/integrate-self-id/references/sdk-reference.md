@@ -543,6 +543,75 @@ Rust: fields use snake_case, `Option<T>` for optional fields.
 
 ---
 
+### Proof Expiry Handling
+
+Human proofs expire after `maxProofAge` (default: 365 days) or at passport document expiry, whichever is sooner. SDKs provide tools to detect and handle expiry.
+
+#### Checking Proof Freshness
+
+```typescript
+// TypeScript — check via on-chain call
+const info = await agent.getInfo();
+console.log(info.proofExpiresAt); // unix timestamp (seconds), 0 if no proof
+```
+
+```python
+# Python
+info = agent.get_info()
+print(info.proof_expires_at)
+```
+
+```rust
+// Rust
+let info = agent.get_info().await?;
+println!("{}", info.proof_expires_at);
+```
+
+#### Expiry Warning Threshold
+
+The TypeScript SDK includes a built-in 30-day warning threshold:
+
+```typescript
+import { isProofExpiringSoon, EXPIRY_WARNING_THRESHOLD_SECS } from "@selfxyz/agent-sdk";
+// EXPIRY_WARNING_THRESHOLD_SECS = 2_592_000 (30 days)
+
+if (isProofExpiringSoon(proofExpiresAt)) {
+  console.warn("Proof expires within 30 days — prompt human to re-verify");
+}
+```
+
+#### VerifyResult Expiry States
+
+The verifier returns a `PROOF_EXPIRED` reason when an agent's proof has lapsed:
+
+```typescript
+const result = await verifier.verify({ address, signature, timestamp, method, path, body });
+if (!result.valid && result.reason === "PROOF_EXPIRED") {
+  // Agent must deregister and re-register to refresh
+}
+```
+
+#### Refreshing a Proof
+
+There is no in-place refresh. The agent must deregister (burn NFT, clear state) then re-register (new passport scan, new agentId, fresh `proofExpiresAt`).
+
+```typescript
+// TypeScript
+await agent.requestDeregistration(); // human confirms via Self app
+// ... after deregistration completes:
+const session = await agent.requestRegistration({ minimumAge: 18, ofac: true });
+// human scans passport again
+```
+
+```python
+# Python
+agent.request_deregistration()
+# ... after deregistration:
+session = agent.request_registration(minimum_age=18, ofac=True)
+```
+
+---
+
 ### Verification Pipeline
 
 The verifier executes checks in this order, short-circuiting on failure:

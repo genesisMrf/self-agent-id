@@ -2457,4 +2457,72 @@ contract SelfAgentRegistryTest is Test {
         // Also confirm the expiry is strictly less than the age-based cap
         assertLt(actualExpiry, ageExpiry);
     }
+
+    function test_refreshExpiredProof_DeregisterAndReRegister() public {
+        // Full lifecycle: register → proof expires → isProofFresh false → deregister → re-register → fresh again
+        _registerViaHub(human1, nullifier1);
+        uint256 firstAgentId = registry.getAgentId(agentKey1);
+        uint256 firstExpiry = registry.proofExpiresAt(firstAgentId);
+        assertTrue(registry.isProofFresh(firstAgentId), "proof should be fresh right after registration");
+
+        // Fast-forward past expiry
+        vm.warp(firstExpiry + 1);
+        assertFalse(registry.isProofFresh(firstAgentId), "proof should be stale after expiry");
+        assertTrue(registry.hasHumanProof(firstAgentId), "hasHumanProof should still be true (historical)");
+
+        // Attempting to re-register without deregistering should revert
+        bytes memory encodedOutput = _buildEncodedOutput(human1, nullifier1);
+        bytes memory userData = _buildUserData(0x52); // 'R'
+        vm.prank(hubMock);
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.AgentAlreadyRegistered.selector, agentKey1));
+        registry.onVerificationSuccess(encodedOutput, userData);
+
+        // Deregister the expired agent
+        _deregisterViaHub(human1, nullifier1);
+        assertEq(registry.getAgentId(agentKey1), 0, "agent key mapping should be cleared");
+        assertEq(registry.proofExpiresAt(firstAgentId), 0, "expiry should be cleared on deregister");
+
+        // Re-register with the same key — gets a new agentId and fresh proof
+        _registerViaHub(human1, nullifier1);
+        uint256 secondAgentId = registry.getAgentId(agentKey1);
+        assertGt(secondAgentId, firstAgentId, "new agentId should be higher (monotonic)");
+        assertTrue(registry.isProofFresh(secondAgentId), "re-registered proof should be fresh");
+        assertApproxEqAbs(
+            registry.proofExpiresAt(secondAgentId),
+            block.timestamp + registry.maxProofAge(),
+            60,
+            "new expiry should be ~now + maxProofAge"
+        );
+
+        // Old agentId should be fully cleaned up
+        assertFalse(registry.hasHumanProof(firstAgentId), "old agentId hasHumanProof should be false");
+        assertFalse(registry.isProofFresh(firstAgentId), "old agentId isProofFresh should be false");
+    }
+
+    function test_refreshExpiredProof_ViaRevokeHumanProof() public {
+        // Same lifecycle but using the synchronous registerWithHumanProof + revokeHumanProof path
+        bytes32 syncKey = bytes32(uint256(0xbeef));
+        bytes memory providerData = abi.encodePacked(syncKey);
+
+        mockProvider.setShouldVerify(true);
+        mockProvider.setNextNullifier(nullifier1);
+        vm.prank(human1);
+        uint256 firstId = registry.registerWithHumanProof("", address(mockProvider), "", providerData);
+        assertTrue(registry.isProofFresh(firstId), "proof should be fresh after sync registration");
+
+        // Fast-forward past expiry
+        vm.warp(block.timestamp + registry.maxProofAge() + 1);
+        assertFalse(registry.isProofFresh(firstId), "proof should be stale after maxProofAge");
+
+        // Revoke and re-register
+        vm.prank(human1);
+        registry.revokeHumanProof(firstId, address(mockProvider), "", "");
+
+        mockProvider.setShouldVerify(true);
+        mockProvider.setNextNullifier(nullifier1);
+        vm.prank(human1);
+        uint256 secondId = registry.registerWithHumanProof("", address(mockProvider), "", providerData);
+        assertGt(secondId, firstId, "new agentId should be higher");
+        assertTrue(registry.isProofFresh(secondId), "refreshed proof should be fresh");
+    }
 }

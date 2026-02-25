@@ -209,6 +209,28 @@ After successful registration, verify the agent identity is correctly recorded o
 
 4. **Test request signing** — use the `self_sign_request` MCP tool or `agent.signRequest()` SDK method to generate auth headers, then verify them with `SelfAgentVerifier` to confirm the full authentication pipeline works end-to-end.
 
+## Proof Expiry & Refreshing Registration
+
+Human proofs are **not permanent**. Each registration sets a `proofExpiresAt` timestamp equal to `min(passport_document_expiry, now + maxProofAge)`, where `maxProofAge` defaults to **365 days**.
+
+After expiry:
+- `isProofFresh(agentId)` returns `false` — services using freshness checks will reject the agent.
+- `hasHumanProof(agentId)` still returns `true` — the historical proof record is preserved.
+- The soulbound NFT remains, but the agent is functionally inactive for freshness-gated operations.
+
+### How to Refresh
+
+There is no in-place refresh function. To renew:
+
+1. **Deregister** the expired agent using the `self_deregister_agent` MCP tool, `agent.requestDeregistration()` SDK method, or CLI `deregister` flow. This burns the NFT and clears all state (including `proofExpiresAt`).
+2. **Re-register** with the same agent key. The human scans their passport again via the Self app. A **new agentId** is minted with a fresh expiry.
+
+The old agentId is permanently burned. The new agentId is monotonically higher. Plan for this in applications that store agentIds — they will change on refresh.
+
+### Proactive Monitoring
+
+SDKs include a 30-day warning threshold. Check `proofExpiresAt` and prompt the human to re-verify before expiry to avoid service disruption.
+
 ## Troubleshooting
 
 | Symptom | Cause | Resolution |

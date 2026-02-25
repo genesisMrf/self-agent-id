@@ -386,6 +386,51 @@ The `--evm-version cancun` flag is required because Hub V2 uses the PUSH0 opcode
 
 ---
 
+## Handling Proof Expiry
+
+Human proofs expire after `maxProofAge` (default: 365 days) or when the passport document expires, whichever comes first. Integrations should handle this gracefully.
+
+### Service-Side: Detect Expired Proofs
+
+The `SelfAgentVerifier` automatically checks proof freshness via `isProofFresh()`. When a proof has expired, the verifier rejects the request with a `PROOF_EXPIRED` reason. Handle this in your error responses to guide agents toward re-registration:
+
+```typescript
+// TypeScript
+const result = await verifier.verify({ address, signature, timestamp, method, path, body });
+if (!result.valid && result.reason === "PROOF_EXPIRED") {
+  return res.status(401).json({
+    error: "Agent proof has expired",
+    action: "deregister_and_reregister",
+    proofExpiresAt: result.proofExpiresAt,
+  });
+}
+```
+
+### Agent-Side: Monitor Expiry
+
+Check `proofExpiresAt` proactively and warn before expiry:
+
+```typescript
+// TypeScript
+const info = await agent.getInfo();
+const THIRTY_DAYS = 30 * 24 * 60 * 60;
+const now = Math.floor(Date.now() / 1000);
+if (info.proofExpiresAt > 0 && info.proofExpiresAt - now < THIRTY_DAYS) {
+  console.warn("Proof expiring soon — initiate refresh");
+}
+```
+
+### On-Chain: Use isProofFresh()
+
+```solidity
+// Gate on freshness, not just proof existence
+require(registry.isProofFresh(agentId), "Proof expired");
+```
+
+### Refresh Flow
+
+To refresh: deregister (burn NFT) → re-register (mint new NFT). The agentId changes on refresh — update any stored references.
+
 ## Troubleshooting
 
 These are the most frequently encountered issues during integration. Read through all of them before starting.

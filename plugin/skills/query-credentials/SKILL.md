@@ -97,15 +97,15 @@ Example content:
   "mainnet": {
     "chainId": 42220,
     "rpc": "https://forno.celo.org",
-    "registry": "0x60651482a3033A72128f874623Fc790061cc46D4",
-    "provider": "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+    "registry": "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
+    "provider": "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
     "explorer": "https://celoscan.io"
   },
   "testnet": {
     "chainId": 11142220,
     "rpc": "https://forno.celo-sepolia.celo-testnet.org",
-    "registry": "0x29d941856134b1D053AfFF57fa560324510C79fa",
-    "provider": "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
+    "registry": "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
+    "provider": "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c",
     "explorer": "https://celo-sepolia.blockscout.com"
   }
 }
@@ -158,9 +158,9 @@ Example agent card:
   "url": "https://myagent.example.com",
   "selfProtocol": {
     "agentId": 5,
-    "registry": "0x60651482a3033A72128f874623Fc790061cc46D4",
+    "registry": "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
     "chainId": 42220,
-    "proofProvider": "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+    "proofProvider": "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
     "providerName": "self",
     "verificationStrength": 100,
     "trustModel": {

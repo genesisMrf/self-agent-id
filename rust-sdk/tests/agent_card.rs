@@ -138,9 +138,9 @@ fn full_card() -> A2AAgentCard {
         }]),
         self_protocol: SelfProtocolExtension {
             agent_id: 42,
-            registry: "0x60651482a3033A72128f874623Fc790061cc46D4".into(),
+            registry: "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944".into(),
             chain_id: 42220,
-            proof_provider: "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b".into(),
+            proof_provider: "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d".into(),
             provider_name: "Self Protocol".into(),
             verification_strength: 100,
             trust_model: TrustModel {
@@ -214,11 +214,11 @@ fn agent_card_serde_round_trip() {
     // Self protocol extension
     let sp = &deserialized.self_protocol;
     assert_eq!(sp.agent_id, 42);
-    assert_eq!(sp.registry, "0x60651482a3033A72128f874623Fc790061cc46D4");
+    assert_eq!(sp.registry, "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944");
     assert_eq!(sp.chain_id, 42220);
     assert_eq!(
         sp.proof_provider,
-        "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b"
+        "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d"
     );
     assert_eq!(sp.provider_name, "Self Protocol");
     assert_eq!(sp.verification_strength, 100);

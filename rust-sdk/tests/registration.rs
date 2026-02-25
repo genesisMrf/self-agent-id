@@ -23,7 +23,7 @@ const EXPECTED_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
 // Known chain and registry for cross-language parity
 const TEST_CHAIN_ID: u64 = 11142220;
-const TEST_REGISTRY: &str = "0x29d941856134b1D053AfFF57fa560324510C79fa";
+const TEST_REGISTRY: &str = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379";
 
 // ───────────────────────────── Config index tests ─────────────────────────────
 
@@ -354,7 +354,7 @@ fn cross_language_challenge_hash() {
     //   computeRegistrationChallengeHash({
     //     humanIdentifier: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     //     chainId: 11142220,
-    //     registryAddress: "0x29d941856134b1D053AfFF57fa560324510C79fa",
+    //     registryAddress: "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
     //   })
     //
     // solidityPacked(["string","address","uint256","address"],

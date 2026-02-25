@@ -224,8 +224,8 @@ describe("generateRegistrationJSON", () => {
 // ─── buildAgentCard ──────────────────────────────────────────────────────────
 
 describe("buildAgentCard", () => {
-  const REGISTRY_ADDRESS = "0x60651482a3033A72128f874623Fc790061cc46D4";
-  const PROVIDER_ADDRESS = "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b";
+  const REGISTRY_ADDRESS = "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944";
+  const PROVIDER_ADDRESS = "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d";
 
   function createMockRegistry(options?: { throwOnCredentials?: boolean }) {
     return {

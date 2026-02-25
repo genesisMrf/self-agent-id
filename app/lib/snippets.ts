@@ -61,7 +61,7 @@ function needsCreds(f: Set<string>): boolean {
 
 function buildServiceTS(
   f: Set<string>,
-  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
+  registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
   rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
 ): string {
   const regAge = f.has("regAge");
@@ -336,7 +336,7 @@ ${body}
 
 // ── Agent → Agent builders ──
 
-function buildAgentAgentTS(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
+function buildAgentAgentTS(f: Set<string>, registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379", rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org"): string {
   const mutual = f.has("mutual");
   const sameHuman = f.has("sameHuman");
   const diffHuman = f.has("diffHuman");
@@ -411,7 +411,7 @@ ${verifyBody}
 }`;
 }
 
-function buildAgentAgentSolidity(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa"): string {
+function buildAgentAgentSolidity(f: Set<string>, registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379"): string {
   const diffHuman = f.has("diffHuman");
   const sameHuman = f.has("sameHuman");
   const mutual = f.has("mutual");
@@ -476,7 +476,7 @@ ${modifier}
 
 // ── Agent → Chain builder ──
 
-function buildAgentChainSolidity(f: Set<string>, registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa"): string {
+function buildAgentChainSolidity(f: Set<string>, registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379"): string {
   const sybil = f.has("sybil");
   const creds = needsCreds(f);
   const regAge = f.has("regAge");
@@ -713,12 +713,12 @@ function buildTestSetupTS(): string {
 import { ethers } from "ethers";
 
 // Celo Sepolia testnet — for mainnet use https://forno.celo.org + mainnet addresses
-const REGISTRY = "0x29d941856134b1D053AfFF57fa560324510C79fa";
+const REGISTRY = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379";
 const RPC = "https://forno.celo-sepolia.celo-testnet.org";
 const DEMO_SERVICE = "https://agent-id-demo-service-4aawyjohja-uc.a.run.app";
 const DEMO_AGENT = "https://agent-id-demo-agent-4aawyjohja-uc.a.run.app";
 const DEMO_APP = "https://self-agent-id.vercel.app"; // replace with your deployment URL
-const VERIFIER = "0x31A5A1d34728c5e6425594A596997A7Bf4aD607d";
+const VERIFIER = "0xc31BAe8f2d7FCd19f737876892f05d9bDB294241";
 
 const agent = new SelfAgent({
   privateKey: process.env.AGENT_PRIVATE_KEY!,
@@ -986,7 +986,7 @@ contract MyProtocol {
 // ============================================================
 
 export function getServiceSnippets(
-  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
+  registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
   rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
   features?: Set<string>,
 ): UseCaseSnippets[] {
@@ -1029,7 +1029,7 @@ export function getServiceSnippets(
 }
 
 export function getAgentSnippets(
-  registryAddress: string = "0x29d941856134b1D053AfFF57fa560324510C79fa",
+  registryAddress: string = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
   rpcUrl: string = "https://forno.celo-sepolia.celo-testnet.org",
   features?: Set<string>,
 ): UseCaseSnippets[] {

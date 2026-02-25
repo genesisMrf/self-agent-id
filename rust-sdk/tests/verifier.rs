@@ -113,7 +113,7 @@ fn builder_invalid_registry_address_does_not_panic() {
 fn from_config_with_various_settings() {
     let _verifier = SelfAgentVerifier::from_config(VerifierFromConfig {
         network: Some(NetworkName::Testnet),
-        registry_address: Some("0x29d941856134b1D053AfFF57fa560324510C79fa".to_string()),
+        registry_address: Some("0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379".to_string()),
         rpc_url: Some("https://forno.celo-sepolia.celo-testnet.org".to_string()),
         require_age: Some(21),
         require_ofac: Some(true),
@@ -529,7 +529,7 @@ fn builder_method_order_does_not_matter() {
 fn from_config_with_registry_string() {
     let _verifier = SelfAgentVerifier::from_config(VerifierFromConfig {
         registry_address: Some(
-            "0x60651482a3033A72128f874623Fc790061cc46D4".to_string(),
+            "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944".to_string(),
         ),
         rpc_url: Some("https://forno.celo.org".to_string()),
         ..Default::default()

@@ -313,8 +313,8 @@ This SDK is 100% compatible with the Rust SDK (`self-agent-sdk`) and Python SDK 
 
 | Network | Registry | Chain ID |
 |---------|----------|----------|
-| Mainnet (Celo) | `0x60651482a3033A72128f874623Fc790061cc46D4` | 42220 |
-| Testnet (Celo Sepolia) | `0x29d941856134b1D053AfFF57fa560324510C79fa` | 11142220 |
+| Mainnet (Celo) | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | 42220 |
+| Testnet (Celo Sepolia) | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` | 11142220 |
 
 ## License
 

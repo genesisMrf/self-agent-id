@@ -407,10 +407,10 @@ Base URL: `https://self-agent-id.vercel.app` (override via `SELF_AGENT_API_BASE`
 | Chain ID | 42220 |
 | RPC | `https://forno.celo.org` |
 | Block time | ~5 seconds |
-| Registry | `0x60651482a3033A72128f874623Fc790061cc46D4` |
-| Provider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
-| DemoVerifier | `0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C` |
-| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` |
+| Registry | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` |
+| Provider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` |
+| DemoVerifier | `0xD8ec054FD869A762bC977AC328385142303c7def` |
+| AgentGate | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` |
 | Explorer | [celoscan.io](https://celoscan.io) / [explorer.celo.org](https://explorer.celo.org) |
 
@@ -421,10 +421,10 @@ Base URL: `https://self-agent-id.vercel.app` (override via `SELF_AGENT_API_BASE`
 | Chain ID | 11142220 |
 | RPC | `https://forno.celo-sepolia.celo-testnet.org` |
 | Block time | ~5 seconds |
-| Registry | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
-| Provider | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
-| DemoVerifier | `0x31A5A1d34728c5e6425594A596997A7Bf4aD607d` |
-| AgentGate | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
+| Registry | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
+| Provider | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
+| DemoVerifier | `0xc31BAe8f2d7FCd19f737876892f05d9bDB294241` |
+| AgentGate | `0x86Af07e30Aa42367cbcA7f2B1764Be346598bbc2` |
 | Hub V2 | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 | Explorer | [celo-sepolia.celoscan.io](https://celo-sepolia.celoscan.io) |
 

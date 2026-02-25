@@ -742,8 +742,8 @@ const card: A2AAgentCard = buildAgentCard({
   url: "https://myagent.example.com",
   agentId: 5,
   chainId: 42220,
-  registry: "0x60651482a3033A72128f874623Fc790061cc46D4",
-  proofProvider: "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+  registry: "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
+  proofProvider: "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
   credentials: { nationality: "USA", olderThan: 18, ofacClean: true },
   skills: [
     { id: "chat", name: "Chat", description: "General conversation" },
@@ -814,15 +814,15 @@ import { NETWORKS } from "@selfxyz/agent-sdk";
 NETWORKS = {
   mainnet: {
     chainId: 42220,
-    registry: "0x60651482a3033A72128f874623Fc790061cc46D4",
-    provider: "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+    registry: "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
+    provider: "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
     rpcUrl: "https://forno.celo.org",
     explorerUrl: "https://celoscan.io",
   },
   testnet: {
     chainId: 11142220,
-    registry: "0x29d941856134b1D053AfFF57fa560324510C79fa",
-    provider: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
+    registry: "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
+    provider: "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c",
     rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
     explorerUrl: "https://celo-sepolia.blockscout.com",
   },

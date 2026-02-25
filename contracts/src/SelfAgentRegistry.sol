@@ -95,6 +95,12 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     /// @notice Maps agentId to the agent URI (ERC-8004 registration file location)
     mapping(uint256 => string) private _agentURIs;
 
+    /// @notice ERC-8004 required: key-value metadata entry for batch registration
+    struct MetadataEntry {
+        string metadataKey;
+        bytes metadataValue;
+    }
+
     /// @notice Stores ZK-attested credential claims for each agent
     struct AgentCredentials {
         string issuingState;
@@ -111,9 +117,14 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     /// @notice Maps agentId to ZK-attested credentials (populated at registration)
     mapping(uint256 => AgentCredentials) private _agentCredentials;
 
-    /// @notice Maximum agents per human (0 = unlimited)
-    /// Sybil resistance is enforced per-service by the SDK verifier, not here.
-    uint256 public maxAgentsPerHuman = 0;
+    /// @notice Maximum agents per human (0 = unlimited, 1 = default — one agent per human)
+    /// @dev Default of 1 enforces sybil resistance at the contract level.
+    ///      Services that need multiple agents per human can call setMaxAgentsPerHuman().
+    uint256 public maxAgentsPerHuman = 1;
+
+    /// @notice When true, the base register() overloads revert — all registration requires human proof.
+    /// @dev Set to false only for non-sybil-resistant deployments that want ERC-8004 base compat without ZK.
+    bool public requireHumanProof = true;
 
     /// @notice The next agent ID to mint
     uint256 private _nextAgentId;
@@ -123,6 +134,7 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     // ====================================================
 
     error TransferNotAllowed();
+    error ProofRequired();
     error AgentAlreadyRegistered(bytes32 agentKey);
     error AgentNotRegistered(bytes32 agentKey);
     error NotAgentOwner(uint256 expectedNullifier, uint256 actualNullifier);
@@ -201,6 +213,12 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     // ====================================================
     // Admin Functions
     // ====================================================
+
+    /// @notice Set whether the base register() overloads require human proof
+    /// @param required True to enforce ZK proof for all registration (default), false for permissive mode
+    function setRequireHumanProof(bool required) external onlyOwner {
+        requireHumanProof = required;
+    }
 
     /// @notice Set the SelfHumanProofProvider companion address
     /// @dev Also approves it as a provider. Can only be called once effectively (or to update).
@@ -327,6 +345,34 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
     // ====================================================
     // IERC8004ProofOfHuman — Registration
     // ====================================================
+
+    /// @notice ERC-8004 required: register with URI and metadata batch
+    /// @dev When requireHumanProof is true (default), reverts with ProofRequired().
+    ///      When false, mints without proof via _baseRegister() and applies metadata.
+    function register(
+        string calldata agentURI,
+        MetadataEntry[] calldata metadata
+    ) external returns (uint256 agentId) {
+        if (requireHumanProof) revert ProofRequired();
+        agentId = _baseRegister(msg.sender, agentURI);
+        for (uint256 i = 0; i < metadata.length; i++) {
+            _setMetadataInternal(agentId, metadata[i].metadataKey, metadata[i].metadataValue);
+        }
+    }
+
+    /// @notice ERC-8004 required: register with URI (no metadata)
+    /// @dev When requireHumanProof is true (default), reverts with ProofRequired().
+    function register(string calldata agentURI) external returns (uint256 agentId) {
+        if (requireHumanProof) revert ProofRequired();
+        return _baseRegister(msg.sender, agentURI);
+    }
+
+    /// @notice ERC-8004 required: register with no URI (set later via setAgentURI)
+    /// @dev When requireHumanProof is true (default), reverts with ProofRequired().
+    function register() external returns (uint256 agentId) {
+        if (requireHumanProof) revert ProofRequired();
+        return _baseRegister(msg.sender, "");
+    }
 
     /// @inheritdoc IERC8004ProofOfHuman
     /// @dev For Self Protocol, this function cannot be used directly because Hub V2 uses
@@ -491,9 +537,29 @@ contract SelfAgentRegistry is ERC721, Ownable, SelfVerificationRoot, IERC8004Pro
         emit AgentMetadataUpdated(agentId);
     }
 
+    /// @inheritdoc IERC8004ProofOfHuman
+    function setAgentURI(uint256 agentId, string calldata newURI) external override {
+        if (msg.sender != ownerOf(agentId)) revert NotNftOwner(agentId);
+        _agentURIs[agentId] = newURI;
+        emit URIUpdated(agentId, newURI, msg.sender);
+    }
+
     // ====================================================
     // Internal Logic
     // ====================================================
+
+    /// @dev Base registration without proof — only callable when requireHumanProof is false.
+    ///      Mints NFT, stores URI, emits Registered. Does NOT set hasHumanProof.
+    function _baseRegister(address to, string memory agentURI) internal returns (uint256 agentId) {
+        agentId = _nextAgentId++;
+        _mint(to, agentId);
+        if (bytes(agentURI).length > 0) _agentURIs[agentId] = agentURI;
+        emit Registered(agentId, agentURI, to);
+    }
+
+    /// @dev Stub — full implementation in Task 4.
+    ///      Stores a key-value metadata entry for an agent.
+    function _setMetadataInternal(uint256, string memory, bytes memory) internal virtual {}
 
     /// @notice Mint a new agent NFT and store proof data
     /// @param nullifier The human's scoped nullifier

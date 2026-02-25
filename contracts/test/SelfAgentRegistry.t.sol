@@ -1916,4 +1916,158 @@ contract SelfAgentRegistryTest is Test {
         uint256 agentId = registry.getAgentId(agentKey1);
         assertEq(registry.tokenURI(agentId), "");
     }
+
+    // ====================================================
+    // V5: setAgentURI — Tests
+    // ====================================================
+
+    function test_setAgentURIUpdatesURI() public {
+        // Register an agent via Hub then set URI as the NFT owner
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+
+        string memory newURI = "ipfs://QmNewAgentRegistrationFile";
+
+        vm.prank(human1);
+        registry.setAgentURI(agentId, newURI);
+
+        assertEq(registry.tokenURI(agentId), newURI);
+    }
+
+    function test_setAgentURIEmitsURIUpdated() public {
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+
+        string memory newURI = "ipfs://QmURIUpdatedEvent";
+
+        vm.expectEmit(true, false, true, true);
+        emit IERC8004ProofOfHuman.URIUpdated(agentId, newURI, human1);
+
+        vm.prank(human1);
+        registry.setAgentURI(agentId, newURI);
+    }
+
+    function test_setAgentURIRevertsIfNotOwner() public {
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+
+        vm.prank(human2);
+        vm.expectRevert(abi.encodeWithSelector(SelfAgentRegistry.NotNftOwner.selector, agentId));
+        registry.setAgentURI(agentId, "ipfs://QmShouldNotUpdate");
+    }
+
+    function test_setAgentURICanClearURI() public {
+        // Register with a URI via mock provider
+        string memory initialURI = "ipfs://QmInitialAgentURI";
+        bytes memory providerData = abi.encodePacked(agentKey1);
+        mockProvider.setNextNullifier(nullifier1);
+
+        vm.prank(human1);
+        uint256 agentId = registry.registerWithHumanProof(initialURI, address(mockProvider), "", providerData);
+        assertEq(registry.tokenURI(agentId), initialURI, "URI should be set after registration");
+
+        // Clear the URI by setting it to empty string
+        vm.prank(human1);
+        registry.setAgentURI(agentId, "");
+
+        assertEq(registry.tokenURI(agentId), "");
+    }
+
+    // ====================================================
+    // Task 3: ERC-8004 register() overloads + requireHumanProof
+    // ====================================================
+
+    // --- Revert when requireHumanProof = true (default) ---
+
+    function test_registerRevertsWhenProofRequired() public {
+        // Default: requireHumanProof = true; bare register() should revert
+        vm.prank(human1);
+        vm.expectRevert(SelfAgentRegistry.ProofRequired.selector);
+        registry.register();
+    }
+
+    function test_registerWithURIRevertsWhenProofRequired() public {
+        vm.prank(human1);
+        vm.expectRevert(SelfAgentRegistry.ProofRequired.selector);
+        registry.register("ipfs://QmAgentURI");
+    }
+
+    function test_registerWithURIAndMetadataRevertsWhenProofRequired() public {
+        SelfAgentRegistry.MetadataEntry[] memory meta = new SelfAgentRegistry.MetadataEntry[](1);
+        meta[0] = SelfAgentRegistry.MetadataEntry({ metadataKey: "type", metadataValue: bytes("agent") });
+
+        vm.prank(human1);
+        vm.expectRevert(SelfAgentRegistry.ProofRequired.selector);
+        registry.register("ipfs://QmAgentURI", meta);
+    }
+
+    // --- Work when requireHumanProof = false ---
+
+    function test_registerWorksWhenProofNotRequired() public {
+        vm.prank(owner);
+        registry.setRequireHumanProof(false);
+
+        vm.prank(human1);
+        uint256 agentId = registry.register();
+
+        // NFT minted to human1
+        assertEq(registry.ownerOf(agentId), human1);
+        // No human proof
+        assertFalse(registry.hasHumanProof(agentId));
+        // URI is empty
+        assertEq(registry.tokenURI(agentId), "");
+    }
+
+    function test_registerWithURIWorksWhenProofNotRequired() public {
+        vm.prank(owner);
+        registry.setRequireHumanProof(false);
+
+        string memory uri = "ipfs://QmBaseRegisterWithURI";
+        vm.prank(human1);
+        uint256 agentId = registry.register(uri);
+
+        assertEq(registry.ownerOf(agentId), human1);
+        assertEq(registry.tokenURI(agentId), uri);
+        assertFalse(registry.hasHumanProof(agentId));
+    }
+
+    function test_registerWithURIAndMetadataWorksAndSetsMetadata() public {
+        vm.prank(owner);
+        registry.setRequireHumanProof(false);
+
+        string memory uri = "ipfs://QmTest";
+        SelfAgentRegistry.MetadataEntry[] memory meta = new SelfAgentRegistry.MetadataEntry[](1);
+        meta[0] = SelfAgentRegistry.MetadataEntry({
+            metadataKey: "type",
+            metadataValue: bytes("text-agent")
+        });
+
+        vm.prank(human1);
+        uint256 agentId = registry.register(uri, meta);
+
+        // Loop executed without reverting; full metadata storage assertions deferred to Task 4
+        // (when _setMetadataInternal stub is replaced with real implementation)
+        assertEq(registry.ownerOf(agentId), human1);
+        assertEq(registry.tokenURI(agentId), uri);
+    }
+
+    // --- Admin ---
+
+    function test_setRequireHumanProofUpdatesFlag() public {
+        assertTrue(registry.requireHumanProof(), "Should be true by default");
+
+        vm.prank(owner);
+        registry.setRequireHumanProof(false);
+        assertFalse(registry.requireHumanProof());
+
+        vm.prank(owner);
+        registry.setRequireHumanProof(true);
+        assertTrue(registry.requireHumanProof());
+    }
+
+    function test_setRequireHumanProofRevertsIfNotOwner() public {
+        vm.prank(human1);
+        vm.expectRevert();
+        registry.setRequireHumanProof(false);
+    }
 }

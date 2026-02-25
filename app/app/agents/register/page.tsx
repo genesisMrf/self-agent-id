@@ -189,7 +189,7 @@ export default function RegisterPage() {
       version: 2,
       appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || "Self Agent ID",
       scope: process.env.NEXT_PUBLIC_SELF_SCOPE_SEED || "self-agent-id",
-      endpoint: network.registryAddress,
+      endpoint: network.registryAddress.toLowerCase(),
       logoBase64: "https://i.postimg.cc/mrmVf9hm/self.png",
       userId,
       endpointType: network.selfEndpointType,

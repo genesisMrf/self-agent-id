@@ -1,8 +1,8 @@
 # Self Agent ID
 
 [![npm](https://img.shields.io/npm/v/@selfxyz/agent-sdk?label=npm)](https://www.npmjs.com/package/@selfxyz/agent-sdk)
-[![PyPI](https://img.shields.io/badge/pypi-coming%20soon-lightgrey)](https://pypi.org/project/selfxyz-agent-sdk/)
-[![crates.io](https://img.shields.io/badge/crates.io-coming%20soon-lightgrey)](https://crates.io/crates/self-agent-sdk)
+[![PyPI](https://img.shields.io/pypi/v/selfxyz-agent-sdk)](https://pypi.org/project/selfxyz-agent-sdk/)
+[![crates.io](https://img.shields.io/crates/v/self-agent-sdk)](https://crates.io/crates/self-agent-sdk)
 [![MCP](https://img.shields.io/badge/MCP-remote-blue)](https://self-agent-id.vercel.app/api/mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

@@ -256,7 +256,9 @@ export default function CliRegisterHandoffPage() {
     setLoading(true);
     setError("");
     try {
-      const { walletAddress } = await createPasskeyWallet("Self Agent ID", network);
+      const passkeySuffix = crypto.getRandomValues(new Uint8Array(2))
+        .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+      const { walletAddress } = await createPasskeyWallet(`Self Agent ID (${passkeySuffix})`, network);
       setGuardianAddress(walletAddress);
 
       const userDefinedData = buildSmartWalletUserDefinedData(

@@ -529,7 +529,7 @@ contract SelfAgentRegistry is
         }
 
         string memory uri = agentURI;
-        uint256 agentId = _mintAgent(nullifier, agentKey, proofProvider_, msg.sender, uri);
+        uint256 agentId = _mintAgent(nullifier, agentKey, proofProvider_, msg.sender, uri, bytes32(0));
         return agentId;
     }
 
@@ -753,7 +753,8 @@ contract SelfAgentRegistry is
         bytes32 agentKey,
         address proofProvider_,
         address to,
-        string memory agentURI
+        string memory agentURI,
+        bytes32 attestationId
     ) internal returns (uint256 agentId) {
         SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
         if ($.agentKeyToAgentId[agentKey] != 0) revert AgentAlreadyRegistered(agentKey);
@@ -780,7 +781,7 @@ contract SelfAgentRegistry is
         $.proofExpiresAt[agentId] = block.timestamp + $.maxProofAge;
 
         if ($.reputationRegistry != address(0)) {
-            ISelfReputationRegistryMinimal($.reputationRegistry).recordHumanProofFeedback(agentId);
+            ISelfReputationRegistryMinimal($.reputationRegistry).recordHumanProofFeedback(agentId, attestationId);
         }
 
         emit AgentRegisteredWithHumanProof(
@@ -803,7 +804,7 @@ contract SelfAgentRegistry is
     ) internal {
         SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
         address provider = $.selfProofProvider;
-        uint256 agentId = _mintAgent(nullifier, agentKey, provider, humanAddress, "");
+        uint256 agentId = _mintAgent(nullifier, agentKey, provider, humanAddress, "", output.attestationId);
         _storeCredentials(agentId, output);
     }
 
@@ -817,7 +818,7 @@ contract SelfAgentRegistry is
     ) internal {
         SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
         address provider = $.selfProofProvider;
-        uint256 agentId = _mintAgent(nullifier, agentKey, provider, agentAddress, "");
+        uint256 agentId = _mintAgent(nullifier, agentKey, provider, agentAddress, "", output.attestationId);
         _storeCredentials(agentId, output);
 
         if (guardian != address(0)) {
@@ -1008,5 +1009,5 @@ contract SelfAgentRegistry is
 /// @dev Minimal interface used by SelfAgentRegistry to call recordHumanProofFeedback
 interface ISelfReputationRegistryMinimal {
     /// @notice Record an automatic proof-of-human feedback entry for the given agent
-    function recordHumanProofFeedback(uint256 agentId) external;
+    function recordHumanProofFeedback(uint256 agentId, bytes32 attestationId) external;
 }

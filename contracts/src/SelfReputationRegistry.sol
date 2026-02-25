@@ -62,6 +62,9 @@ contract SelfReputationRegistry is ImplRoot {
         bytes32 responseHash
     );
 
+    /// @notice Emitted when a document weight is updated
+    event DocumentWeightUpdated(bytes32 indexed attestationId, int128 weight, string tag);
+
     // ====================================================
     // Structs & Constants
     // ====================================================
@@ -94,6 +97,8 @@ contract SelfReputationRegistry is ImplRoot {
         mapping(uint256 => address[]) clients;
         mapping(uint256 => mapping(address => bool)) clientExists;
         mapping(uint256 => mapping(address => mapping(uint64 => uint64))) responseCount;
+        mapping(bytes32 => int128) documentWeight;
+        mapping(bytes32 => string) documentTag;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("self.storage.SelfReputationRegistry")) - 1)) & ~bytes32(uint256(0xff))
@@ -132,6 +137,28 @@ contract SelfReputationRegistry is ImplRoot {
     }
 
     // ====================================================
+    // Admin — Document Weights
+    // ====================================================
+
+    /// @notice Set the reputation weight and tag for a document type (identified by attestationId)
+    /// @param attestationId The document type identifier (e.g., bytes32(1) for E_PASSPORT)
+    /// @param weight The feedback value to record (must be positive)
+    /// @param tag The tag2 string for this document type (e.g., "passport-nfc")
+    function setDocumentWeight(bytes32 attestationId, int128 weight, string calldata tag) external onlyRole(SECURITY_ROLE) {
+        require(weight > 0, "weight must be positive");
+        SelfReputationRegistryStorage storage $ = _getSelfReputationRegistryStorage();
+        $.documentWeight[attestationId] = weight;
+        $.documentTag[attestationId] = tag;
+        emit DocumentWeightUpdated(attestationId, weight, tag);
+    }
+
+    /// @notice Returns the configured weight and tag for a document type
+    function getDocumentWeight(bytes32 attestationId) external view returns (int128 weight, string memory tag) {
+        SelfReputationRegistryStorage storage $ = _getSelfReputationRegistryStorage();
+        return ($.documentWeight[attestationId], $.documentTag[attestationId]);
+    }
+
+    // ====================================================
     // Write — Feedback
     // ====================================================
 
@@ -161,13 +188,19 @@ contract SelfReputationRegistry is ImplRoot {
     }
 
     /// @notice Called only by the identity registry to auto-record proof-of-human feedback.
-    function recordHumanProofFeedback(uint256 agentId) external {
+    /// @param agentId The agent that was just registered
+    /// @param attestationId The document type used for verification (bytes32(0) skips feedback)
+    function recordHumanProofFeedback(uint256 agentId, bytes32 attestationId) external {
         SelfReputationRegistryStorage storage $ = _getSelfReputationRegistryStorage();
         require(msg.sender == $.identityRegistry, "only identity registry");
+        if (attestationId == bytes32(0)) return; // external providers — skip auto-feedback
+        int128 weight = $.documentWeight[attestationId];
+        require(weight > 0, "unconfigured document type");
+        string memory tag = $.documentTag[attestationId];
         _recordFeedback(
             agentId, msg.sender,
-            100, 0,
-            "proof-of-human", "passport-nfc",
+            weight, 0,
+            "proof-of-human", tag,
             "", "", bytes32(0)
         );
     }

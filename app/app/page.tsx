@@ -42,12 +42,17 @@ import { useState, useEffect } from "react";
 
 export default function Home() {
   const [animationData, setAnimationData] = useState<object | null>(null);
+  const trustGapTweetUrl = "https://x.com/galnagli/status/2017585025475092585";
 
   useEffect(() => {
     fetch("/lottie_agents.json")
       .then((res) => res.json())
       .then(setAnimationData);
   }, []);
+
+  const openTrustGapTweet = () => {
+    window.open(trustGapTweetUrl, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <main className="min-h-screen">
@@ -159,11 +164,21 @@ export default function Home() {
           </h2>
 
           {/* Tweet quote card */}
-          <a
-            href="https://x.com/galnagli/status/2017585025475092585"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block"
+          <div
+            role="link"
+            tabIndex={0}
+            onClick={openTrustGapTweet}
+            onKeyDown={(e) => {
+              if (
+                e.target === e.currentTarget &&
+                (e.key === "Enter" || e.key === " ")
+              ) {
+                e.preventDefault();
+                openTrustGapTweet();
+              }
+            }}
+            aria-label="Open referenced X post in a new tab"
+            className="block cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
           >
             <Card
               glow
@@ -257,7 +272,7 @@ export default function Home() {
                 </span>
               </div>
             </Card>
-          </a>
+          </div>
 
           <p className="text-center text-muted mt-8 max-w-lg mx-auto leading-relaxed">
             Self Agent ID makes this impossible. One identity per person.

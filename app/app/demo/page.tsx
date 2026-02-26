@@ -1566,6 +1566,24 @@ export default function DemoPage() {
       // Load agent info
       const agentId = await registry.getAgentId(agentKey);
 
+      let credentials: AgentCredentials | undefined;
+      try {
+        const raw = await registry.getAgentCredentials(agentId);
+        const creds: AgentCredentials = {
+          issuingState: raw.issuingState ?? raw[0] ?? "",
+          name: raw.name ?? raw[1] ?? [],
+          nationality: raw.nationality ?? raw[3] ?? "",
+          dateOfBirth: raw.dateOfBirth ?? raw[4] ?? "",
+          gender: raw.gender ?? raw[5] ?? "",
+          expiryDate: raw.expiryDate ?? raw[6] ?? "",
+          olderThan: raw.olderThan ?? raw[7] ?? 0n,
+          ofac: raw.ofac ?? raw[8] ?? [false, false, false],
+        };
+        if (creds.nationality || creds.olderThan > 0n) credentials = creds;
+      } catch {
+        console.error("Error fetching Agent credentials")
+      }
+
       dispatch({
         type: "SETUP_DONE",
         agent: {
@@ -1573,6 +1591,7 @@ export default function DemoPage() {
           agentKey,
           agentId: agentId.toString(),
           isVerified: true,
+          credentials,
         },
       });
     } catch (err) {

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 //! REST-based registration and deregistration flow for AI agents.
 //!
 //! # Example
@@ -87,7 +91,6 @@ pub struct RegistrationRequest {
 pub struct DeregistrationRequest {
     pub network: String,
     pub agent_address: String,
-    pub agent_private_key: String,
 }
 
 /// Successful registration result.
@@ -225,8 +228,8 @@ impl RegistrationSession {
     pub async fn export_key(&self) -> Result<String, RegistrationError> {
         let resp = self
             .http
-            .get(format!("{}/api/agent/register/export", self.api_base))
-            .query(&[("token", &self.session_token)])
+            .post(format!("{}/api/agent/register/export", self.api_base))
+            .json(&serde_json::json!({ "token": self.session_token }))
             .send()
             .await
             .map_err(|e| RegistrationError::Http(e.to_string()))?;

@@ -38,8 +38,8 @@ Every verification flow MUST confirm that the agent's proof provider is the Self
 
 | Network | SelfHumanProofProvider Address |
 |---|---|
-| Mainnet (42220) | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
-| Testnet (11142220) | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| Mainnet (42220) | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` |
+| Testnet (11142220) | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
 
 **How to check:**
 
@@ -362,8 +362,8 @@ let verifier = SelfAgentVerifier::builder()
 
 | Contract | Mainnet (42220) | Testnet (11142220) |
 |---|---|---|
-| SelfAgentRegistry | `0x60651482a3033A72128f874623Fc790061cc46D4` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
-| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| SelfAgentRegistry | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
+| SelfHumanProofProvider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
 | SelfReputationProvider | Deployed alongside registry | Deployed alongside registry |
 | SelfValidationProvider | Deployed alongside registry | Deployed alongside registry |
 

@@ -380,11 +380,55 @@ The `--evm-version cancun` flag is required because Hub V2 uses the PUSH0 opcode
 
 | Contract | Mainnet (42220) | Testnet (11142220) |
 |---|---|---|
-| SelfAgentRegistry | `0x60651482a3033A72128f874623Fc790061cc46D4` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
-| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| SelfAgentRegistry | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
+| SelfHumanProofProvider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 
 ---
+
+## Handling Proof Expiry
+
+Human proofs expire after `maxProofAge` (default: 365 days) or when the passport document expires, whichever comes first. Integrations should handle this gracefully.
+
+### Service-Side: Detect Expired Proofs
+
+The `SelfAgentVerifier` checks proof freshness via `isProofFresh()` as part of its `verify()` flow. When a proof has expired, the verifier returns `valid: false` with an error message. Handle this in your error responses to guide agents toward re-registration:
+
+```typescript
+// TypeScript
+const result = await verifier.verify({ address, signature, timestamp, method, path, body });
+if (!result.valid && result.error?.includes("proof has expired")) {
+  return res.status(401).json({
+    error: "Agent proof has expired",
+    action: "deregister_and_reregister",
+  });
+}
+```
+
+### Agent-Side: Monitor Expiry
+
+Check `proofExpiresAt` proactively and warn before expiry:
+
+```typescript
+// TypeScript
+const info = await agent.getInfo();
+const THIRTY_DAYS = 30 * 24 * 60 * 60;
+const now = Math.floor(Date.now() / 1000);
+if (info.proofExpiresAt > 0 && info.proofExpiresAt - now < THIRTY_DAYS) {
+  console.warn("Proof expiring soon — initiate refresh");
+}
+```
+
+### On-Chain: Use isProofFresh()
+
+```solidity
+// Gate on freshness, not just proof existence
+require(registry.isProofFresh(agentId), "Proof expired");
+```
+
+### Refresh Flow
+
+To refresh: deregister (burn NFT) → re-register (mint new NFT). The agentId changes on refresh — update any stored references.
 
 ## Troubleshooting
 
@@ -413,7 +457,7 @@ Follow this sequence to validate a full integration from registration through ve
 
 2. **Scan QR with Self app** — The registration flow generates a QR code. Open the Self app, scan the QR, and scan the passport NFC chip. The Self app generates a ZK proof locally and submits it on-chain.
 
-3. **Poll for completion** — Call `agent.getRegistrationStatus()` (SDK) or `self_check_registration` (MCP) every 5-10 seconds. The flow typically takes 30-90 seconds. Sessions expire after 10 minutes.
+3. **Poll for completion** — Call `agent.getRegistrationStatus()` (SDK) or `self_check_registration` (MCP) every 5-10 seconds. The flow typically takes 30-90 seconds. Sessions expire after 30 minutes.
 
 4. **Test request signing** — Use `agent.signRequest()` or `self_sign_request` to generate the 3 auth headers. Verify them using `SelfAgentVerifier` or `self_verify_request`.
 

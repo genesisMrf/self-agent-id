@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 export { SelfAgent } from "./SelfAgent";
 export type { SelfAgentConfig, AgentInfo } from "./SelfAgent";
 
-export { SelfAgentVerifier, VerifierBuilder } from "./SelfAgentVerifier";
+export { SelfAgentVerifier, VerifierBuilder, verifyAgent } from "./SelfAgentVerifier";
 export type {
   VerifierConfig,
   VerificationResult,
@@ -9,6 +13,9 @@ export type {
   RateLimitConfig,
   VerifierFromConfig,
 } from "./SelfAgentVerifier";
+
+export { isProofExpiringSoon, EXPIRY_WARNING_THRESHOLD_SECS } from "./types";
+export type { VerifyResult } from "./types";
 
 export {
   getRegistrationConfigIndex,
@@ -35,12 +42,20 @@ export type {
 
 export {
   buildAgentCard,
+  generateRegistrationJSON,
   getProviderLabel,
   getStrengthColor,
   PROVIDER_LABELS,
 } from "./agentCard";
 export type {
   A2AAgentCard,
+  ERC8004AgentDocument,
+  A2ACapabilities,
+  A2AProvider,
+  A2ASecurityScheme,
+  ERC8004Service,
+  ERC8004Registration,
+  GenerateRegistrationJSONOptions,
   SelfProtocolExtension,
   TrustModel,
   CardCredentials,

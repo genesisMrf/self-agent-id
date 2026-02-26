@@ -3,8 +3,8 @@
 [![npm](https://img.shields.io/npm/v/@selfxyz/agent-sdk?label=npm)](https://www.npmjs.com/package/@selfxyz/agent-sdk)
 [![PyPI](https://img.shields.io/pypi/v/selfxyz-agent-sdk?label=pypi)](https://pypi.org/project/selfxyz-agent-sdk/)
 [![crates.io](https://img.shields.io/crates/v/self-agent-sdk?label=crates.io)](https://crates.io/crates/self-agent-sdk)
-[![MCP](https://img.shields.io/npm/v/@selfxyz/mcp-server?label=mcp)](https://www.npmjs.com/package/@selfxyz/mcp-server)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-remote-blue)](https://self-agent-id.vercel.app/api/mcp)
+[![License: BUSL--1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 
 Proof-of-human identity for AI agents on Celo.
 
@@ -47,6 +47,12 @@ const verifier = SelfAgentVerifier.create()
 
 app.use("/api", verifier.auth());
 ```
+
+### Quickstart Prerequisites (Important)
+
+1. Success-path verification requires an agent key that is already registered on-chain.
+2. If the key is not registered, a protected request is expected to fail with `401 Agent not verified on-chain`.
+3. Ensure signer network matches verifier network (`mainnet` vs `testnet`) before debugging signatures.
 
 ### Run the web app locally
 
@@ -136,10 +142,10 @@ Self Agent ID is an on-chain identity registry that binds AI agent identities to
 
 | Contract | Address |
 |----------|---------|
-| SelfAgentRegistry | `0x60651482a3033A72128f874623Fc790061cc46D4` |
-| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
-| AgentDemoVerifier | `0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C` |
-| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` |
+| SelfAgentRegistry | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` |
+| SelfHumanProofProvider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` |
+| AgentDemoVerifier | `0xD8ec054FD869A762bC977AC328385142303c7def` |
+| AgentGate | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` |
 
 - RPC: `https://forno.celo.org`
@@ -150,10 +156,10 @@ Self Agent ID is an on-chain identity registry that binds AI agent identities to
 
 | Contract | Address |
 |----------|---------|
-| SelfAgentRegistry | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
-| SelfHumanProofProvider | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
-| AgentDemoVerifier | `0x31A5A1d34728c5e6425594A596997A7Bf4aD607d` |
-| AgentGate | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
+| SelfAgentRegistry | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
+| SelfHumanProofProvider | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
+| AgentDemoVerifier | `0xc31BAe8f2d7FCd19f737876892f05d9bDB294241` |
+| AgentGate | `0x86Af07e30Aa42367cbcA7f2B1764Be346598bbc2` |
 | Hub V2 | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 
 - RPC: `https://forno.celo-sepolia.celo-testnet.org`
@@ -354,6 +360,8 @@ Every signed request includes three headers:
 | `x-self-agent-signature` | ECDSA signature of `keccak256(timestamp + METHOD + path + bodyHash)` |
 | `x-self-agent-timestamp` | Unix timestamp in milliseconds |
 
+> **Critical integration note**: verify against the exact request bytes received by your server. If middleware rewrites or reserializes JSON before verification, signatures can fail even when the client is correct.
+
 ### 6.2 Service-Side: `SelfAgentVerifier`
 
 Verifies inbound agent requests with configurable policy.
@@ -441,7 +449,7 @@ async fn main() {
         .route("/api/data", post(handle))
         .layer(middleware::from_fn_with_state(verifier, self_agent_auth));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -528,9 +536,9 @@ Agent cards follow a standardized format for agent-to-agent discovery:
   "skills": [{ "name": "data-analysis", "description": "Analyzes CSV data" }],
   "selfProtocol": {
     "agentId": 5,
-    "registry": "0x60651482a3033A72128f874623Fc790061cc46D4",
+    "registry": "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
     "chainId": 42220,
-    "proofProvider": "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
+    "proofProvider": "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
     "providerName": "self",
     "verificationStrength": 100,
     "trustModel": {
@@ -671,7 +679,7 @@ Sessions are persisted as JSON with restricted file permissions (0600):
   "network": {
     "chainId": 11142220,
     "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
-    "registryAddress": "0x29d941856134b1D053AfFF57fa560324510C79fa",
+    "registryAddress": "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
     "endpointType": "staging_celo",
     "appUrl": "...",
     "appName": "Self Agent ID",
@@ -709,13 +717,29 @@ Session stages: `initialized` → `handoff_opened` → `callback_received` → `
 
 The [MCP server](https://github.com/selfxyz/self-agent-id-mcp) gives AI coding agents direct access to Self Agent ID through the [Model Context Protocol](https://modelcontextprotocol.io/). It works with Claude Code, Cursor, Windsurf, Codex, and any MCP-compatible client.
 
-### Install
+### Remote MCP (Streamable HTTP)
+
+Connect any MCP-compatible client directly via URL — no local install required:
+
+```json
+{
+  "mcpServers": {
+    "self-agent-id": {
+      "url": "https://self-agent-id.vercel.app/api/mcp"
+    }
+  }
+}
+```
+
+Works with Claude Desktop, Cursor, Windsurf, and any client supporting Streamable HTTP transport.
+
+### Local MCP (stdio)
+
+For local/offline use, run the MCP server directly:
 
 ```bash
 npx @selfxyz/mcp-server
 ```
-
-### Configuration
 
 **Claude Code** (`~/.claude.json` or project `.mcp.json`):
 
@@ -827,7 +851,7 @@ SDK default base URL can be overridden with env var `SELF_AGENT_API_BASE`.
   "agentKey": "0x00000000000000000000000083fa4380903fecb801f4e123835664973001ff00",
   "agentAddress": "0x83fa4380903fecb801F4e123835664973001ff00",
   "isVerified": true,
-  "proofProvider": "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
+  "proofProvider": "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c",
   "verificationStrength": 100,
   "strengthLabel": "passport",
   "credentials": {
@@ -1059,6 +1083,14 @@ Agent                    Relayer                  Contract
 - Timestamp freshness check (default: 5 minutes) prevents old signatures.
 - Each agent has a monotonic nonce in the EIP-712 demo contract.
 
+### Verification Failure Drills (Recommended)
+
+Use these deterministic checks to validate your service integration:
+
+1. Tamper drill: sign body `A`, send body `B` with the same auth headers. Expected: signature failure (`401 Invalid signature`).
+2. Expired drill: send a timestamp older than your configured `maxAge`. Expected: freshness failure (`401 Timestamp expired or invalid`).
+3. Replay drill: submit the exact same signed request twice. Expected: first accepted, second rejected when replay protection is enabled.
+
 ### Rate Limiting
 
 - SDK verifiers support per-agent sliding-window rate limits.
@@ -1138,6 +1170,49 @@ console.log(creds.nationality, creds.olderThan);
 ```
 GET /api/agent/info/{chainId}/{agentId}
 → response.credentials.nationality, response.credentials.olderThan
+```
+
+---
+
+## 13.1 Proof Expiry & Refresh
+
+Human proofs have a limited validity period. The on-chain `proofExpiresAt` timestamp is set at registration time as:
+
+```
+proofExpiresAt = min(passport_document_expiry, block.timestamp + maxProofAge)
+```
+
+- **`maxProofAge`** defaults to **365 days** (configurable by the registry owner via `setMaxProofAge()`).
+- **`isProofFresh(agentId)`** returns `true` only if `block.timestamp < proofExpiresAt[agentId]`.
+- **`hasHumanProof(agentId)`** returns `true` as long as the proof exists (regardless of expiry) — use `isProofFresh()` for time-sensitive checks.
+- **`proofExpiresAt(agentId)`** returns the raw expiry timestamp (unix seconds).
+
+### Checking Expiry (SDK)
+
+```typescript
+// TypeScript SDK — check if proof is expiring soon
+const info = await agent.getInfo();
+const expiresAt = info.proofExpiresAt; // unix timestamp (seconds)
+const THIRTY_DAYS = 30 * 24 * 60 * 60;
+if (expiresAt > 0 && expiresAt - Math.floor(Date.now() / 1000) < THIRTY_DAYS) {
+  console.warn("Proof expiring soon — consider refreshing registration");
+}
+```
+
+### Refreshing an Expired Proof
+
+There is no in-place "refresh" function. To renew an expired proof, the agent must **deregister and re-register**:
+
+1. **Deregister** — call `self_deregister_agent` (MCP), `agent.requestDeregistration()` (SDK), or the CLI `deregister` flow. This burns the soulbound NFT and clears all on-chain state.
+2. **Re-register** — initiate a new registration with the same agent key. The human scans their passport again via the Self app. A new agentId is minted with a fresh `proofExpiresAt`.
+
+The old agentId is permanently burned. The new agentId is monotonically higher. Services using `isProofFresh()` will automatically accept the refreshed agent.
+
+### On-Chain (Solidity)
+
+```solidity
+// Gate on fresh proof, not just existence
+require(registry.isProofFresh(agentId), "Proof expired — agent must re-verify");
 ```
 
 ---
@@ -1265,6 +1340,13 @@ cd python-sdk && pip install -e ".[dev]" && pytest
 cd rust-sdk && cargo test
 ```
 
+### Verification Smoke Checklist (Before Demos / Releases)
+
+1. Build and test all changed components.
+2. Start your verifier service and confirm health endpoint.
+3. Run one registered-agent success request.
+4. Run at least two failure drills (`tamper`, `expired`, or `replay`) and confirm expected status/errors.
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
@@ -1290,4 +1372,18 @@ See the [`examples/`](examples/) directory:
 
 ## License
 
-MIT
+Business Source License 1.1 (`BUSL-1.1`).
+
+- Source-available with a non-commercial additional use grant.
+- Commercial use requires a separate written license from Social Connect Labs, Inc.
+- Converts to Apache-2.0 on 2029-06-11 (see [LICENSE](LICENSE)).
+- Path override: `contracts/**` uses `MIT` (via SPDX headers).
+- Path override: `examples/**` uses `MIT` (via SPDX headers).
+
+### License Header Tooling
+
+- Check duplicate headers: `python3 scripts/check-duplicate-headers.py`
+- Check formatting/presence: `python3 scripts/check-license-headers.py`
+- Auto-fix headers: `python3 scripts/check-license-headers.py --fix`
+- Run both checks: `python3 scripts/lint-headers.py`
+- Install git pre-commit hook: `./scripts/install-git-hooks.sh`

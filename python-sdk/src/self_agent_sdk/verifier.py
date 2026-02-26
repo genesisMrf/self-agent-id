@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+# NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 """Service-side verifier for Self Agent ID requests."""
 from __future__ import annotations
 
@@ -408,6 +412,15 @@ class SelfAgentVerifier:
                 error="Agent not verified on-chain",
             )
 
+        # 6b. Check proof freshness (expired proofs should not pass verification)
+        if not chain.get("is_proof_fresh", False):
+            return VerificationResult(
+                valid=False, agent_address=signer, agent_key=agent_key,
+                agent_id=chain["agent_id"], agent_count=chain["agent_count"],
+                nullifier=chain["nullifier"],
+                error="Agent's human proof has expired",
+            )
+
         # 7. Provider check
         if self._require_self_provider and chain["agent_id"] > 0:
             try:
@@ -504,8 +517,10 @@ class SelfAgentVerifier:
         agent_count = 0
         nullifier = 0
         provider = ""
+        is_proof_fresh = False
 
         if agent_id > 0:
+            is_proof_fresh = self._registry.functions.isProofFresh(agent_id).call()
             if self._max_agents_per_human > 0:
                 nullifier = self._registry.functions.getHumanNullifier(agent_id).call()
                 agent_count = self._registry.functions.getAgentCountForHuman(nullifier).call()
@@ -514,6 +529,7 @@ class SelfAgentVerifier:
 
         entry = {
             "is_verified": is_verified,
+            "is_proof_fresh": is_proof_fresh,
             "agent_id": agent_id,
             "agent_count": agent_count,
             "nullifier": nullifier,

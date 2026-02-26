@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 // POST /api/agent/deregister — Initiate agent deregistration
 //
 // Validates the agent is registered on-chain, builds the deregistration
@@ -25,11 +29,11 @@ import {
   corsResponse,
   type ApiNetwork,
 } from "@/lib/agent-api-helpers";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 interface DeregisterRequestBody {
   network: string;
   agentAddress: string;
-  agentPrivateKey?: string;
   disclosures?: {
     minimumAge?: number;
     ofac?: boolean;
@@ -42,6 +46,13 @@ interface DeregisterRequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit: 10 deregistration requests per minute per IP
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const rl = await checkRateLimit({ key: `deregister:${ip}`, limit: 10, windowMs: 60_000 });
+  if (!rl.allowed) {
+    return errorResponse("Too many requests", 429);
+  }
+
   let body: DeregisterRequestBody;
   try {
     body = await req.json();
@@ -201,10 +212,11 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[deregister] init failed:", message);
     if (message.includes("SESSION_SECRET")) {
-      return errorResponse(message, 500);
+      return errorResponse("Server configuration error", 500);
     }
-    return errorResponse(`Deregistration init failed: ${message}`, 500);
+    return errorResponse("Deregistration init failed", 500);
   }
 }
 

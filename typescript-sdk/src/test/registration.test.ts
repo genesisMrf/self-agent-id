@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { ethers } from "ethers";
@@ -18,7 +22,7 @@ import {
 } from "../registration";
 
 const HUMAN = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-const REGISTRY = "0x29d941856134b1D053AfFF57fa560324510C79fa";
+const REGISTRY = "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379";
 const CHAIN_ID = 11142220;
 const AGENT_PK =
   "0x59c6995e998f97a5a0044966f094538db5f5f848f8a98f6f53f6df6f7d8f2148";

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 use alloy::primitives::Address;
 use alloy::sol;
 use std::str::FromStr;
@@ -20,12 +24,12 @@ pub struct NetworkConfig {
 pub fn network_config(network: NetworkName) -> NetworkConfig {
     match network {
         NetworkName::Mainnet => NetworkConfig {
-            registry_address: Address::from_str("0x60651482a3033A72128f874623Fc790061cc46D4")
+            registry_address: Address::from_str("0xaC3DF9ABf80d0F5c020C06B04Cced27763355944")
                 .unwrap(),
             rpc_url: "https://forno.celo.org",
         },
         NetworkName::Testnet => NetworkConfig {
-            registry_address: Address::from_str("0x29d941856134b1D053AfFF57fa560324510C79fa")
+            registry_address: Address::from_str("0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379")
                 .unwrap(),
             rpc_url: "https://forno.celo-sepolia.celo-testnet.org",
         },
@@ -62,6 +66,7 @@ sol! {
         function getAgentCountForHuman(uint256 nullifier) external view returns (uint256);
         function sameHuman(uint256 agentIdA, uint256 agentIdB) external view returns (bool);
         function getProofProvider(uint256 agentId) external view returns (address);
+        function isProofFresh(uint256 agentId) external view returns (bool);
         function selfProofProvider() external view returns (address);
         function ownerOf(uint256 tokenId) external view returns (address);
 

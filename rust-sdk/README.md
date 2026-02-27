@@ -130,6 +130,29 @@ let verifier = SelfAgentVerifier::from_config(VerifierFromConfig {
 });
 ```
 
+## Proof Expiry & Refresh
+
+Human proofs expire after `maxProofAge` (default: 365 days) or at passport document expiry, whichever is sooner. The expiry timestamp is set on-chain at registration.
+
+```rust
+// Check proof freshness
+let info = agent.get_info().await?;
+println!("Proof expires at: {}", info.proof_expires_at); // unix seconds, 0 if unregistered
+
+// Check if expiring within 30 days
+let thirty_days = 30 * 24 * 60 * 60;
+let now = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)?
+    .as_secs();
+if info.proof_expires_at > 0 && info.proof_expires_at - now < thirty_days {
+    eprintln!("Proof expiring soon — prompt human to re-verify");
+}
+```
+
+**Verifier-side:** The verifier returns `reason: ProofExpired` when an agent's proof has lapsed.
+
+**Refreshing:** There is no in-place refresh. Deregister (burn NFT) → re-register (new passport scan, new agentId, fresh expiry).
+
 ## A2A Agent Card
 
 Publish machine-readable identity metadata for agent-to-agent discovery:
@@ -306,9 +329,9 @@ cargo test -- --ignored
 
 | Network | Registry | Chain ID |
 |---------|----------|----------|
-| Mainnet (Celo) | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` | 42220 |
-| Testnet (Celo Sepolia) | `0x29d941856134b1D053AfFF57fa560324510C79fa` | 11142220 |
+| Mainnet (Celo) | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | 42220 |
+| Testnet (Celo Sepolia) | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` | 11142220 |
 
 ## License
 
-MIT
+Business Source License 1.1 (`BUSL-1.1`). See [../LICENSE](../LICENSE).

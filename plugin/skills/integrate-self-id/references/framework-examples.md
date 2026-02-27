@@ -523,7 +523,7 @@ async fn main() {
         .with_state(state);
 
     println!("Server running on port 3000 (network: {network})");
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 ```
@@ -594,7 +594,7 @@ const agentAuth = async (c: any, next: any) => {
 
   if (!result.valid) {
     return c.json(
-      { error: "Agent verification failed", reason: result.reason },
+      { error: "Agent verification failed", reason: result.error },
       401
     );
   }
@@ -699,7 +699,7 @@ export async function GET(req: NextRequest) {
 
   if (!result.valid) {
     return NextResponse.json(
-      { error: "Agent verification failed", reason: result.reason },
+      { error: "Agent verification failed", reason: result.error },
       { status: 401 }
     );
   }
@@ -737,7 +737,7 @@ export async function POST(req: NextRequest) {
 
   if (!result.valid) {
     return NextResponse.json(
-      { error: "Agent verification failed", reason: result.reason },
+      { error: "Agent verification failed", reason: result.error },
       { status: 401 }
     );
   }
@@ -801,7 +801,7 @@ export async function verifyAgent(
   if (!result.valid) {
     return {
       error: NextResponse.json(
-        { error: "Agent verification failed", reason: result.reason },
+        { error: "Agent verification failed", reason: result.error },
         { status: 401 }
       ),
     };
@@ -1178,19 +1178,19 @@ forge verify-contract \
 
 | Parameter | Value |
 |---|---|
-| `_registry` | `0x60651482a3033A72128f874623Fc790061cc46D4` |
+| `_registry` | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` |
 | `_reputation` | (deployed alongside registry) |
 | `_validation` | (deployed alongside registry) |
-| `_selfProvider` | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` |
+| `_selfProvider` | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` |
 
 **Testnet (Celo Sepolia, chain 11142220):**
 
 | Parameter | Value |
 |---|---|
-| `_registry` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
+| `_registry` | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
 | `_reputation` | (deployed alongside registry) |
 | `_validation` | (deployed alongside registry) |
-| `_selfProvider` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
+| `_selfProvider` | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
 
 ---
 

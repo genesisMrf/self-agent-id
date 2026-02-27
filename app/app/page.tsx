@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 "use client";
 
 import React from "react";
@@ -30,6 +34,7 @@ import {
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import CodeBlock from "@/components/CodeBlock";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -37,12 +42,17 @@ import { useState, useEffect } from "react";
 
 export default function Home() {
   const [animationData, setAnimationData] = useState<object | null>(null);
+  const trustGapTweetUrl = "https://x.com/galnagli/status/2017585025475092585";
 
   useEffect(() => {
     fetch("/lottie_agents.json")
       .then((res) => res.json())
       .then(setAnimationData);
   }, []);
+
+  const openTrustGapTweet = () => {
+    window.open(trustGapTweetUrl, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <main className="min-h-screen">
@@ -140,11 +150,21 @@ export default function Home() {
           <h2 className="text-3xl font-bold text-center mb-10">The Trust Gap</h2>
 
           {/* Tweet quote card */}
-          <a
-            href="https://x.com/galnagli/status/2017585025475092585"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block"
+          <div
+            role="link"
+            tabIndex={0}
+            onClick={openTrustGapTweet}
+            onKeyDown={(e) => {
+              if (
+                e.target === e.currentTarget &&
+                (e.key === "Enter" || e.key === " ")
+              ) {
+                e.preventDefault();
+                openTrustGapTweet();
+              }
+            }}
+            aria-label="Open referenced X post in a new tab"
+            className="block cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1"
           >
             <Card glow className="relative border-accent-warn/20 bg-white hover:border-accent-warn/40 transition-colors">
               <div className="absolute top-4 right-4 text-subtle">
@@ -212,7 +232,7 @@ export default function Home() {
                 </span>
               </div>
             </Card>
-          </a>
+          </div>
 
           <p className="text-center text-muted mt-8 max-w-lg mx-auto leading-relaxed">
             Self Agent ID makes this impossible. One identity per person. Verified on-chain. <strong className="text-foreground">Sybil-resistant by design.</strong>
@@ -474,7 +494,8 @@ export default function Home() {
           </div>
           <p className="text-center text-muted mb-6 max-w-xl mx-auto">
             Add agent verification to your service with a few lines of code.
-            SDKs available for TypeScript, Python, and Rust.
+            SDKs available for TypeScript, Python, and Rust. Building with AI agents?
+            Use the MCP server to give your agent identity directly from your IDE.
           </p>
 
           {/* Package badges */}
@@ -499,39 +520,50 @@ export default function Home() {
               <p className="text-xs text-muted mb-4">
                 Add middleware to verify incoming agent requests
               </p>
-              <pre className="bg-surface-2 border border-border rounded-lg p-4 text-xs overflow-auto font-mono">
-{`import { SelfAgentVerifier } from
-  "@selfxyz/agent-sdk";
+              <CodeBlock
+                tabs={[
+                  {
+                    label: "TypeScript",
+                    language: "typescript",
+                    code: `import { SelfAgentVerifier } from "@selfxyz/agent-sdk";
 
-const verifier = new SelfAgentVerifier({
-  rpcUrl: "https://forno.celo.org",
-});
+const verifier = SelfAgentVerifier.create()
+  .requireAge(18)
+  .requireOFAC()
+  .build();
 
 // One line of middleware
-app.use(verifier.auth());`}
-              </pre>
+app.use(verifier.auth());`,
+                  },
+                ]}
+              />
             </Card>
             <Card>
               <h3 className="font-bold text-sm mb-1">Sign Requests</h3>
               <p className="text-xs text-muted mb-4">
                 Authenticate your agent with any service
               </p>
-              <pre className="bg-surface-2 border border-border rounded-lg p-4 text-xs overflow-auto font-mono">
-{`import { SelfAgentClient } from
-  "@selfxyz/agent-sdk";
+              <CodeBlock
+                tabs={[
+                  {
+                    label: "TypeScript",
+                    language: "typescript",
+                    code: `import { SelfAgentClient } from "@selfxyz/agent-sdk";
 
 const agent = new SelfAgentClient({
   privateKey: process.env.AGENT_KEY,
 });
 
 // Requests are signed automatically
-const res = await agent.fetch(url);`}
-              </pre>
+const res = await agent.fetch(url);`,
+                  },
+                ]}
+              />
             </Card>
           </div>
 
           <div className="flex justify-center mt-8">
-            <Link href="/explainer">
+            <Link href="/integration">
               <Button variant="primary">
                 See the full integration guide <ArrowRight size={14} />
               </Button>

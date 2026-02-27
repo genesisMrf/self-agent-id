@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ethers } from "ethers";
@@ -117,6 +118,9 @@ export default function RegisterPage() {
   const [activeAgentSnippet, setActiveAgentSnippet] = useState(0);
   const [activeAgentFeatures, setActiveAgentFeatures] = useState<Set<string>>(new Set());
 
+  // Guard against double-triggering handleSuccess (websocket + on-chain poll race)
+  const successTriggeredRef = useRef(false);
+
   // Agent Card flow state
   const [cardStep, setCardStep] = useState<"pending" | "writing" | "done" | "skipped">("pending");
   const [verificationStrength, setVerificationStrength] = useState<number | null>(null);
@@ -129,6 +133,31 @@ export default function RegisterPage() {
     () => getAgentSnippets(network.registryAddress, network.rpcUrl, activeAgentFeatures),
     [network.registryAddress, network.rpcUrl, activeAgentFeatures]
   );
+
+  // On-chain polling fallback: if websocket misses "proof_verified",
+  // poll the contract to detect successful registration while on the scan step.
+  useEffect(() => {
+    if (step !== "scan") return;
+
+    const addressToCheck = mode === "simple" ? walletAddress : agentWallet?.address;
+    if (!addressToCheck) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const registered = await checkIfRegistered(addressToCheck);
+        if (registered) {
+          console.log("[on-chain poll] Agent registered on-chain, triggering success");
+          clearInterval(interval);
+          handleSuccess();
+        }
+      } catch (err) {
+        console.warn("[on-chain poll] Check failed:", err);
+      }
+    }, 5000); // poll every 5 seconds
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, mode, walletAddress, agentWallet?.address]);
 
   const toggleAgentFeature = (id: string) => {
     setActiveAgentFeatures((prev) => {
@@ -177,7 +206,7 @@ export default function RegisterPage() {
       version: 2,
       appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || "Self Agent ID",
       scope: process.env.NEXT_PUBLIC_SELF_SCOPE_SEED || "self-agent-id",
-      endpoint: network.registryAddress,
+      endpoint: network.registryAddress.toLowerCase(),
       logoBase64: "https://i.postimg.cc/mrmVf9hm/self.png",
       userId,
       endpointType: network.selfEndpointType,
@@ -314,8 +343,10 @@ export default function RegisterPage() {
 
     try {
       // 1. Create passkey → Kernel smart wallet (counterfactual)
+      const passkeySuffix = crypto.getRandomValues(new Uint8Array(2))
+        .reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
       const { credentialId, walletAddress: swAddress } =
-        await createPasskeyWallet("Self Agent ID", network);
+        await createPasskeyWallet(`Self Agent ID (${passkeySuffix})`, network);
       setSmartWalletAddress(swAddress);
 
       // 2. Generate agent keypair
@@ -514,10 +545,12 @@ export default function RegisterPage() {
   };
 
   const handleSuccess = () => {
+    // Guard against double-triggering (websocket + on-chain poll race)
+    if (successTriggeredRef.current) return;
+    successTriggeredRef.current = true;
+
     setStep("success");
     window.scrollTo({ top: 0, behavior: "smooth" });
-    // Auto-trigger Agent Card writing after a short delay
-    setTimeout(() => writeAgentCard(), 500);
   };
 
   const handleError = (error: unknown) => {
@@ -1145,7 +1178,7 @@ export default function RegisterPage() {
             </p>
             <div className="flex gap-2">
               <a
-                href="https://apps.apple.com/us/app/self/id6446136401"
+                href="https://apps.apple.com/us/app/self-zk-passport-identity/id6478563710"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 border border-border rounded-lg text-xs font-medium hover:border-border-strong transition-colors"
@@ -1205,6 +1238,7 @@ export default function RegisterPage() {
               }
               setSelfApp(null);
               setErrorMessage("");
+              successTriggeredRef.current = false;
             }}
             variant="ghost"
           >
@@ -1229,20 +1263,27 @@ export default function RegisterPage() {
               <span>Step 1/2: Agent Registered</span>
             </div>
             <div className="flex items-center gap-3 text-sm mt-2">
-              {cardStep === "pending" || cardStep === "writing" ? (
+              {cardStep === "writing" ? (
                 <Loader2 size={16} className="text-accent animate-spin shrink-0" />
               ) : cardStep === "done" ? (
                 <CheckCircle2 size={16} className="text-accent-success shrink-0" />
-              ) : (
+              ) : cardStep === "skipped" ? (
                 <XCircle size={16} className="text-muted shrink-0" />
+              ) : (
+                <Bot size={16} className="text-muted shrink-0" />
               )}
               <span>
-                {cardStep === "pending" ? "Step 2/2: Preparing Agent Card..." :
-                 cardStep === "writing" ? "Step 2/2: Setting Agent Card (confirm in wallet)..." :
+                {cardStep === "writing" ? "Step 2/2: Setting Agent Card (confirm in wallet)..." :
                  cardStep === "done" ? "Step 2/2: Agent Card Set" :
-                 "Step 2/2: Agent Card skipped — you can set it later via SDK or updateAgentMetadata()"}
+                 cardStep === "skipped" ? "Step 2/2: Agent Card skipped — set it later via updateAgentMetadata()" :
+                 "Step 2/2: Set Agent Card"}
               </span>
             </div>
+            {cardStep === "pending" && (
+              <Button className="mt-3 w-full" onClick={() => writeAgentCard()}>
+                Set Agent Card (on-chain)
+              </Button>
+            )}
           </Card>
 
           {/* Verification Strength Badge */}

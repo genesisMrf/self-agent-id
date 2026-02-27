@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+
 set -euo pipefail
 
 # Deploy LangChain demo to Cloud Run with isolated service account.
@@ -32,4 +34,4 @@ gcloud run deploy langchain-agent \
   --cpu-throttling \
   --memory=1Gi \
   --timeout=60 \
-  --set-env-vars="OPENAI_API_KEY=${OPENAI_KEY}"
+  --set-env-vars="OPENAI_API_KEY=${OPENAI_KEY},CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://self-agent-id.vercel.app}"

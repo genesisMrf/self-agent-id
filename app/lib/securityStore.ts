@@ -1,8 +1,20 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 type CounterEntry = { count: number; expiresAt: number };
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL || "";
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
 const USE_UPSTASH = Boolean(UPSTASH_URL && UPSTASH_TOKEN);
+
+if (!USE_UPSTASH && typeof process !== "undefined") {
+  console.warn(
+    "[securityStore] UPSTASH_REDIS_REST_URL/TOKEN not set — " +
+    "rate limiting and replay protection will use in-memory fallback. " +
+    "This does not persist across serverless invocations or scale across instances."
+  );
+}
 
 type GlobalState = typeof globalThis & {
   __selfMemorySet?: Map<string, number>;

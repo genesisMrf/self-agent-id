@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+
 """Minimal service: verify agent requests with FastAPI."""
 from fastapi import FastAPI, Depends
 from self_agent_sdk import SelfAgentVerifier
@@ -24,4 +26,4 @@ async def handle(agent=Depends(agent_auth)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

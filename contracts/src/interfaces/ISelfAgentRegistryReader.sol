@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity 0.8.28;
 
 /// @title ISelfAgentRegistryReader
+/// @author Self Protocol
 /// @notice Minimal read-only interface for querying SelfAgentRegistry state.
 /// @dev Used by provider contracts (reputation, validation) to avoid importing the full registry.
 interface ISelfAgentRegistryReader {

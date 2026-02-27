@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+# NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 """Integration tests against Celo Sepolia.
 
 Run with: pytest tests/test_live.py --slow -v
@@ -23,7 +27,7 @@ DEMO_KEY = os.environ.get("DEMO_AGENT_KEY")
 # Known public addresses (no private key needed to verify these)
 DEMO_AGENT_ADDRESS = "0x83fa4380903fecb801F4e123835664973001ff00"
 DEMO_AGENT_ID = 5
-SELF_PROVIDER_V4 = "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81"
+SELF_PROVIDER_V4 = "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c"
 
 
 # ============================================================

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 use alloy::primitives::{keccak256, Address, B256, FixedBytes, U256};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
@@ -526,7 +530,6 @@ impl SelfAgent {
             DeregistrationRequest {
                 network: network_str.to_string(),
                 agent_address: format!("{:#x}", self.signer.address()),
-                agent_private_key: self.private_key.clone(),
             },
             api_base,
         )

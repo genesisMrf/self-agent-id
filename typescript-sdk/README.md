@@ -115,6 +115,32 @@ const verifier = SelfAgentVerifier.fromConfig({
 });
 ```
 
+## Proof Expiry & Refresh
+
+Human proofs expire after `maxProofAge` (default: 365 days) or at passport document expiry, whichever is sooner. The expiry timestamp is set on-chain at registration.
+
+```typescript
+// Check proof freshness
+const info = await agent.getInfo();
+console.log(info.proofExpiresAt); // unix seconds, 0 if unregistered
+
+// Built-in 30-day warning
+import { isProofExpiringSoon } from "@selfxyz/agent-sdk";
+if (isProofExpiringSoon(info.proofExpiresAt)) {
+  console.warn("Proof expiring soon — prompt human to re-verify");
+}
+```
+
+**Verifier-side:** The verifier returns `reason: "PROOF_EXPIRED"` when an agent's proof has lapsed. Services should return a clear error guiding the agent to re-register.
+
+**Refreshing:** There is no in-place refresh. Deregister (burn NFT) → re-register (new passport scan, new agentId, fresh expiry):
+
+```typescript
+await agent.requestDeregistration(); // human confirms via Self app
+// ... after completion:
+const session = await agent.requestRegistration({ minimumAge: 18, ofac: true });
+```
+
 ## A2A Agent Card
 
 Publish machine-readable identity metadata for agent-to-agent discovery:
@@ -287,9 +313,9 @@ This SDK is 100% compatible with the Rust SDK (`self-agent-sdk`) and Python SDK 
 
 | Network | Registry | Chain ID |
 |---------|----------|----------|
-| Mainnet (Celo) | `0x60651482a3033A72128f874623Fc790061cc46D4` | 42220 |
-| Testnet (Celo Sepolia) | `0x29d941856134b1D053AfFF57fa560324510C79fa` | 11142220 |
+| Mainnet (Celo) | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | 42220 |
+| Testnet (Celo Sepolia) | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` | 11142220 |
 
 ## License
 
-MIT
+Business Source License 1.1 (`BUSL-1.1`). See [../LICENSE](../LICENSE).

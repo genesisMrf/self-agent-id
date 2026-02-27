@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 //! Integration tests that hit the live Celo Sepolia testnet.
 //!
 //! Run with: cargo test --test integration -- --ignored
@@ -37,7 +41,7 @@ async fn read_demo_agent_is_verified_on_chain() {
             .unwrap(),
     );
     let registry_addr =
-        Address::from_str("0x29d941856134b1D053AfFF57fa560324510C79fa").unwrap();
+        Address::from_str("0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379").unwrap();
 
     use self_agent_sdk::constants::IAgentRegistry;
     let registry = IAgentRegistry::new(registry_addr, &provider);

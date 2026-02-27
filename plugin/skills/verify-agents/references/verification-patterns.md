@@ -10,9 +10,9 @@ Reference these addresses throughout all verification code:
 
 | Contract | Mainnet (42220) | Testnet (11142220) |
 |---|---|---|
-| SelfAgentRegistry | `0x60651482a3033A72128f874623Fc790061cc46D4` | `0x29d941856134b1D053AfFF57fa560324510C79fa` |
-| SelfHumanProofProvider | `0xb0F718Bad279e51A9447D36EAa457418dBd4D95b` | `0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81` |
-| AgentGate | `0xD4B30Da5319893FEAB07620DbFf0945e3aDef619` | `0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E` |
+| SelfAgentRegistry | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
+| SelfHumanProofProvider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
+| AgentGate | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` | `0x86Af07e30Aa42367cbcA7f2B1764Be346598bbc2` |
 | Hub V2 | `0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF` | `0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74` |
 
 ---
@@ -382,7 +382,7 @@ async fn main() {
         .merge(protected)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 ```
@@ -523,8 +523,8 @@ function requireHuman(uint256 agentId) internal view {
 **CRITICAL: Always check the provider in production.**
 
 ```solidity
-address constant SELF_PROVIDER_MAINNET = 0xb0F718Bad279e51A9447D36EAa457418dBd4D95b;
-address constant SELF_PROVIDER_TESTNET = 0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81;
+address constant SELF_PROVIDER_MAINNET = 0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d;
+address constant SELF_PROVIDER_TESTNET = 0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c;
 
 function requireSelfProvider(uint256 agentId) internal view {
     address provider = registry.getProofProvider(agentId);
@@ -840,8 +840,8 @@ const REGISTRY_ABI = [
   "function getAgentCountForHuman(uint256 nullifier) view returns (uint256)",
 ];
 
-const SELF_PROVIDER_MAINNET = "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b";
-const REGISTRY_MAINNET = "0x60651482a3033A72128f874623Fc790061cc46D4";
+const SELF_PROVIDER_MAINNET = "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d";
+const REGISTRY_MAINNET = "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944";
 
 async function verifyAgentRequest(
   headers: {

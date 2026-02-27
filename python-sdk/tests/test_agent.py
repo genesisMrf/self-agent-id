@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+# NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 import pytest
 from unittest.mock import MagicMock, patch
 from self_agent_sdk import SelfAgent
@@ -51,14 +55,14 @@ def test_network_defaults_to_mainnet(mock_web3):
     agent = SelfAgent(private_key=TEST_KEY)
     MockWeb3, instance = mock_web3
     call_args = instance.eth.contract.call_args
-    assert "0x60651482a3033A72128f874623Fc790061cc46D4" in str(call_args)
+    assert "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944" in str(call_args)
 
 
 def test_network_testnet_override(mock_web3):
     agent = SelfAgent(private_key=TEST_KEY, network="testnet")
     MockWeb3, instance = mock_web3
     call_args = instance.eth.contract.call_args
-    assert "0x29d941856134b1D053AfFF57fa560324510C79fa" in str(call_args)
+    assert "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379" in str(call_args)
 
 
 def test_custom_registry_overrides_network(mock_web3):

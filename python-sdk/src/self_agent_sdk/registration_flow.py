@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+# SPDX-License-Identifier: BUSL-1.1
+# NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 """REST-based registration and deregistration flow for AI agents.
 
 Usage:
@@ -110,9 +114,9 @@ class RegistrationSession:
         Only available for modes that created a new keypair (e.g. agent-identity,
         wallet-free). Raises RuntimeError if the server refuses.
         """
-        resp = httpx.get(
+        resp = httpx.post(
             f"{self._api_base}/api/agent/register/export",
-            params={"token": self.session_token},
+            json={"token": self.session_token},
         )
         data = resp.json()
         if "error" in data:

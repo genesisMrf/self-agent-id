@@ -131,6 +131,32 @@ async def handle(agent: VerificationResult = Depends(auth)):
     return {"ok": True}
 ```
 
+## Proof Expiry & Refresh
+
+Human proofs expire after `maxProofAge` (default: 365 days) or at passport document expiry, whichever is sooner. The expiry timestamp is set on-chain at registration.
+
+```python
+# Check proof freshness
+info = agent.get_info()
+print(info.proof_expires_at)  # unix seconds, 0 if unregistered
+
+# Check if expiring within 30 days
+import time
+THIRTY_DAYS = 30 * 24 * 60 * 60
+if info.proof_expires_at > 0 and info.proof_expires_at - time.time() < THIRTY_DAYS:
+    print("Proof expiring soon — prompt human to re-verify")
+```
+
+**Verifier-side:** The verifier returns `reason="PROOF_EXPIRED"` when an agent's proof has lapsed.
+
+**Refreshing:** There is no in-place refresh. Deregister (burn NFT) → re-register (new passport scan, new agentId, fresh expiry):
+
+```python
+agent.request_deregistration()  # human confirms via Self app
+# ... after completion:
+session = agent.request_registration(minimum_age=18, ofac=True)
+```
+
 ## A2A Agent Card
 
 Publish machine-readable identity metadata for agent-to-agent discovery:
@@ -324,9 +350,9 @@ pytest -q
 
 | Network | Registry | Chain ID |
 |---------|----------|----------|
-| Mainnet (Celo) | `0x62E37d0f6c5f67784b8828B3dF68BCDbB2e55095` | 42220 |
-| Testnet (Celo Sepolia) | `0x29d941856134b1D053AfFF57fa560324510C79fa` | 11142220 |
+| Mainnet (Celo) | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | 42220 |
+| Testnet (Celo Sepolia) | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` | 11142220 |
 
 ## License
 
-MIT
+Business Source License 1.1 (`BUSL-1.1`). See [../LICENSE](../LICENSE).

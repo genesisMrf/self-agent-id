@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 // ── Network configuration for multi-chain support ─────────────────────────
 
 export type NetworkId = "celo-mainnet" | "celo-sepolia";
@@ -33,10 +37,10 @@ const CELO_MAINNET: NetworkConfig = {
   chainIdHex: "0xa4ec",
   rpcUrl: process.env.NEXT_PUBLIC_RPC_CELO || "https://forno.celo.org",
   blockExplorer: "https://celoscan.io",
-  registryAddress: "0x60651482a3033A72128f874623Fc790061cc46D4",
-  providerAddress: "0xb0F718Bad279e51A9447D36EAa457418dBd4D95b",
-  agentDemoVerifierAddress: "0x404A2Bce7Dc4A9c19Cc41c4247E2bA107bce394C",
-  agentGateAddress: "0xD4B30Da5319893FEAB07620DbFf0945e3aDef619",
+  registryAddress: "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
+  providerAddress: "0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d",
+  agentDemoVerifierAddress: "0xD8ec054FD869A762bC977AC328385142303c7def",
+  agentGateAddress: "0x26e05bF632fb5bACB665ab014240EAC1413dAE35",
   hubV2Address: "0xe57F4773bd9c9d8b6Cd70431117d353298B9f5BF",
   selfEndpointType: "celo",
   isTestnet: false,
@@ -56,10 +60,10 @@ const CELO_SEPOLIA: NetworkConfig = {
   chainIdHex: "0xaa044c",
   rpcUrl: process.env.NEXT_PUBLIC_RPC_CELO_SEPOLIA || "https://forno.celo-sepolia.celo-testnet.org",
   blockExplorer: "https://celo-sepolia.blockscout.com",
-  registryAddress: "0x29d941856134b1D053AfFF57fa560324510C79fa",
-  providerAddress: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81",
-  agentDemoVerifierAddress: "0x31A5A1d34728c5e6425594A596997A7Bf4aD607d",
-  agentGateAddress: "0x9880Dc26c5D5aAA334e12C255a03A3Be3E50003E",
+  registryAddress: "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
+  providerAddress: "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c",
+  agentDemoVerifierAddress: "0xc31BAe8f2d7FCd19f737876892f05d9bDB294241",
+  agentGateAddress: "0x86Af07e30Aa42367cbcA7f2B1764Be346598bbc2",
   hubV2Address: "0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74",
   selfEndpointType: "staging_celo",
   isTestnet: true,

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.4.0",
-    "@selfxyz/agent-sdk": "^0.1.0-alpha.1",
+    "@selfxyz/agent-sdk": "^0.1.0",
     "ethers": "^6.16.0"
   },
   "devDependencies": {

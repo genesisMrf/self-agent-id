@@ -639,15 +639,26 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /api/agent/register/export:
-    get:
+    post:
       tags: [Registration]
       summary: Export agent private key
       operationId: exportAgentKey
       description: >
         After registration completes, export the agent's private key.
         Only available for "agent-identity" and "wallet-free" modes.
-      parameters:
-        - $ref: "#/components/parameters/sessionToken"
+        The session token is sent in the request body (not as a query parameter)
+        to avoid leaking it in server logs and browser history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Encrypted session token
       responses:
         "200":
           description: Private key exported
@@ -760,7 +771,7 @@ paths:
                 chainId: 11142220
                 agentAddress: "0x83fa4380903fecb801F4e123835664973001ff00"
                 isVerified: true
-                proofProvider: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81"
+                proofProvider: "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c"
                 verificationStrength: 2
                 strengthLabel: Standard
                 credentials:
@@ -826,7 +837,7 @@ paths:
               example:
                 agentId: 5
                 isVerified: true
-                proofProvider: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81"
+                proofProvider: "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c"
                 strengthLabel: Standard
                 humanAgentCount: 1
                 maxAgentsPerHuman: 1
@@ -915,7 +926,7 @@ paths:
                 verified: true
                 proofType: Standard
                 registeredAtBlock: "12345678"
-                providerAddress: "0x8e248DEB0F18B0A4b1c608F2d80dBCeB1B868F81"
+                providerAddress: "0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c"
         "404":
           description: Agent not found
           content:

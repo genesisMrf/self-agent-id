@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025-2026 Social Connect Labs, Inc.
+// SPDX-License-Identifier: BUSL-1.1
+// NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
+
 export const REGISTRY_ABI = [
   "function isVerifiedAgent(bytes32 agentPubKey) view returns (bool)",
   "function getAgentId(bytes32 agentPubKey) view returns (uint256)",
@@ -30,11 +34,11 @@ export type NetworkName = "mainnet" | "testnet";
 /** Per-network configuration (registry address + RPC URL) */
 export const NETWORKS: Record<NetworkName, { registryAddress: string; rpcUrl: string }> = {
   mainnet: {
-    registryAddress: "0x60651482a3033A72128f874623Fc790061cc46D4",
+    registryAddress: "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
     rpcUrl: "https://forno.celo.org",
   },
   testnet: {
-    registryAddress: "0x29d941856134b1D053AfFF57fa560324510C79fa",
+    registryAddress: "0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379",
     rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
   },
 };

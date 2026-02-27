@@ -1291,8 +1291,7 @@ self-agent-id/
 ## Additional Documentation
 
 - `docs/SELF_PROTOCOL_INTEGRATION.md` — Self Protocol integration guide
-- `docs/CLI_REGISTRATION_SPEC.md` — CLI command specification
-- `docs/CLI_REGISTRATION_GUIDE.md` — Human + agent-guided registration workflows
+- `docs/CLI_REGISTRATION.md` — CLI registration spec, flows, and agent-guided orchestration
 
 ---
 

@@ -176,11 +176,7 @@ export default function CliQuickstartPage() {
           <p className="text-sm text-muted">
             Full protocol details are in repository docs:{" "}
             <code className="bg-surface-2 px-1 rounded text-accent-2">
-              docs/CLI_REGISTRATION_SPEC.md
-            </code>{" "}
-            and{" "}
-            <code className="bg-surface-2 px-1 rounded text-accent-2">
-              docs/CLI_REGISTRATION_GUIDE.md
+              docs/CLI_REGISTRATION.md
             </code>{" "}
             on{" "}
             <Link

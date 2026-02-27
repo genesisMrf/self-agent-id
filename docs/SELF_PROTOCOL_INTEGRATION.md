@@ -104,5 +104,4 @@ Use these to validate an integration quickly:
 
 For full CLI integration:
 
-1. Registration spec: `docs/CLI_REGISTRATION_SPEC.md`
-2. Human + agent-guided workflows: `docs/CLI_REGISTRATION_GUIDE.md`
+1. CLI registration (spec, flows, orchestration): `docs/CLI_REGISTRATION.md`

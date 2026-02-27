@@ -1,6 +1,6 @@
 # RoutePolicy Hardening Plan (Next.js App Router)
 
-Date: 2026-02-25  
+Date: 2026-02-25
 Status: Phase 0 complete (205 tests, 14 files); ready for Phase 1
 
 ## 1. Why this is worth it here

@@ -1,7 +1,7 @@
 # Self Agent ID API Security Audit Report
 
-Date: February 25, 2026  
-Scope: Next.js App Router API under `app/app/api/*` and security libraries under `app/lib/*`  
+Date: February 25, 2026
+Scope: Next.js App Router API under `app/app/api/*` and security libraries under `app/lib/*`
 Reviewer mode: Read-only audit (no code modifications)
 
 ## Findings (Critical to Informational)

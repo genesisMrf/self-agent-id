@@ -848,14 +848,14 @@ async function runServiceTest(
                 {stats.totalAgents} agents
               </span>
             </p>
-            {stats.topCountries?.filter((c: { country: string }) =>
+            {(stats.topCountries?.filter((c: { country: string }) =>
               c.country?.trim(),
-            ).length > 0 && (
+            ) ?? []).length > 0 && (
               <p className="text-muted">
                 Top countries:{" "}
                 <span className="text-foreground">
                   {stats.topCountries
-                    .filter((c: { country: string }) => c.country?.trim())
+                    ?.filter((c: { country: string }) => c.country?.trim())
                     .map(
                       (c: { country: string; count: number }) =>
                         `${c.country} (${c.count})`,
@@ -1889,14 +1889,14 @@ export default function DemoPage() {
       try {
         const raw = await registry.getAgentCredentials(agentId);
         const creds: AgentCredentials = {
-          issuingState: raw.issuingState ?? raw[0] ?? "",
-          name: raw.name ?? raw[1] ?? [],
-          nationality: raw.nationality ?? raw[3] ?? "",
-          dateOfBirth: raw.dateOfBirth ?? raw[4] ?? "",
-          gender: raw.gender ?? raw[5] ?? "",
-          expiryDate: raw.expiryDate ?? raw[6] ?? "",
-          olderThan: raw.olderThan ?? raw[7] ?? 0n,
-          ofac: raw.ofac ?? raw[8] ?? [false, false, false],
+          issuingState: raw.issuingState ?? "",
+          name: raw.name ?? [],
+          nationality: raw.nationality ?? "",
+          dateOfBirth: raw.dateOfBirth ?? "",
+          gender: raw.gender ?? "",
+          expiryDate: raw.expiryDate ?? "",
+          olderThan: raw.olderThan ?? 0n,
+          ofac: raw.ofac ?? [false, false, false],
         };
         if (creds.nationality || creds.olderThan > 0n) credentials = creds;
       } catch {
@@ -2080,7 +2080,7 @@ export default function DemoPage() {
         } else {
           log(
             "chat",
-            `Agent: ${data.response?.slice(0, 100)}${data.response?.length > 100 ? "..." : ""}`,
+            `Agent: ${data.response?.slice(0, 100)}${(data.response?.length ?? 0) > 100 ? "..." : ""}`,
           );
           dispatch({
             type: "ADD_CHAT_MESSAGE",

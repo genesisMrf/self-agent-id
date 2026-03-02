@@ -36,11 +36,13 @@ export interface RegistrationDisclosures {
  * @param humanIdentifier - The human's on-chain address (checksummed or not).
  * @param chainId - Target chain ID (e.g. 42220 for Celo mainnet).
  * @param registryAddress - Deployed SelfAgentRegistry contract address.
+ * @param nonce - The agent's current registration nonce from `agentNonces(agent)`. Use 0 for first-time registrations.
  */
 export interface RegistrationChallengeInput {
   humanIdentifier: string;
   chainId: number | bigint | string;
   registryAddress: string;
+  nonce: number | bigint | string;
 }
 
 /**
@@ -230,9 +232,9 @@ export function getRegistrationConfigIndex(
  * Computes the keccak256 challenge hash that an agent must sign to prove
  * ownership of its private key during advanced/wallet-free registration.
  *
- * The hash is `keccak256(abi.encodePacked("self-agent-id:register:", human, chainId, registry))`.
+ * The hash is `keccak256(abi.encodePacked("self-agent-id:register:", human, chainId, registry, nonce))`.
  *
- * @param input - Human address, chain ID, and registry address.
+ * @param input - Human address, chain ID, registry address, and agent nonce.
  * @returns The 32-byte keccak256 hash as a hex string.
  */
 export function computeRegistrationChallengeHash(
@@ -241,11 +243,12 @@ export function computeRegistrationChallengeHash(
   const human = normalizeAddress(input.humanIdentifier);
   const registry = normalizeAddress(input.registryAddress);
   const chainId = BigInt(input.chainId);
+  const nonce = BigInt(input.nonce);
 
   return ethers.keccak256(
     ethers.solidityPacked(
-      ["string", "address", "uint256", "address"],
-      ["self-agent-id:register:", human, chainId, registry],
+      ["string", "address", "uint256", "address", "uint256"],
+      ["self-agent-id:register:", human, chainId, registry, nonce],
     ),
   );
 }

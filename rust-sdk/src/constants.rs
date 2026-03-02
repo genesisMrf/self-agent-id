@@ -87,6 +87,10 @@ sol! {
         function getAgentMetadata(uint256 agentId) external view returns (string);
         function updateAgentMetadata(uint256 agentId, string metadata) external;
         function agentRegisteredAt(uint256 agentId) external view returns (uint256);
+        // ERC-8004: proof expiry
+        function proofExpiresAt(uint256 agentId) external view returns (uint256);
+        // Replay-protection nonces for registration signatures
+        function agentNonces(address agent) external view returns (uint256);
     }
 }
 

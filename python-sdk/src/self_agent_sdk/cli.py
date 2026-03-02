@@ -333,11 +333,13 @@ def cmd_init(args: argparse.Namespace, operation: str) -> None:
             if mode in ("wallet-free", "smart-wallet"):
                 human_identifier = agent_address
 
+            # Nonce is 0 for freshly generated agent wallets (never registered before)
             signed = sign_registration_challenge(
                 private_key=agent_private_key,
                 human_identifier=human_identifier,
                 chain_id=int(network["chainId"]),
                 registry_address=str(network["registryAddress"]),
+                nonce=0,
             )
             challenge_hash = signed.message_hash
             signature = {"r": signed.r, "s": signed.s, "v": signed.v}

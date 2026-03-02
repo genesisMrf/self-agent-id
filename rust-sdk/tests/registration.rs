@@ -257,8 +257,8 @@ fn challenge_hash_deterministic() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let hash1 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry);
-    let hash2 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry);
+    let hash1 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
+    let hash2 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
     assert_eq!(hash1, hash2, "Same inputs must produce same hash");
 }
 
@@ -267,8 +267,8 @@ fn challenge_hash_changes_with_chain_id() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let hash_testnet = compute_registration_challenge_hash(human, 11142220, registry);
-    let hash_mainnet = compute_registration_challenge_hash(human, 42220, registry);
+    let hash_testnet = compute_registration_challenge_hash(human, 11142220, registry, 0);
+    let hash_mainnet = compute_registration_challenge_hash(human, 42220, registry, 0);
     assert_ne!(hash_testnet, hash_mainnet);
 }
 
@@ -276,8 +276,17 @@ fn challenge_hash_changes_with_chain_id() {
 fn challenge_hash_is_32_bytes() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
-    let hash = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry);
+    let hash = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
     assert_eq!(hash.len(), 32);
+}
+
+#[test]
+fn challenge_hash_changes_with_nonce() {
+    let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
+    let registry = Address::from_str(TEST_REGISTRY).unwrap();
+    let hash0 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
+    let hash1 = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 1);
+    assert_ne!(hash0, hash1);
 }
 
 // ──────────────────── Signing tests ─────────────────────────────────────────
@@ -287,7 +296,7 @@ async fn sign_challenge_returns_valid_parts() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let result = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry)
+    let result = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry, 0)
         .await
         .expect("signing should succeed");
 
@@ -316,10 +325,10 @@ async fn sign_challenge_message_hash_matches_compute() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let hash_bytes = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry);
+    let hash_bytes = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
     let expected_hash = format!("0x{}", hex::encode(hash_bytes));
 
-    let signed = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry)
+    let signed = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry, 0)
         .await
         .unwrap();
 
@@ -331,7 +340,7 @@ async fn sign_challenge_invalid_key_returns_error() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let result = sign_registration_challenge("0xinvalid", human, TEST_CHAIN_ID, registry).await;
+    let result = sign_registration_challenge("0xinvalid", human, TEST_CHAIN_ID, registry, 0).await;
     assert!(result.is_err());
 }
 
@@ -347,7 +356,7 @@ fn cross_language_challenge_hash() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let hash = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry);
+    let hash = compute_registration_challenge_hash(human, TEST_CHAIN_ID, registry, 0);
     let hash_hex = format!("0x{}", hex::encode(hash));
 
     // This value was independently computed from the TypeScript SDK:
@@ -373,7 +382,7 @@ async fn cross_language_signature_recoverable() {
     let human = Address::from_str(EXPECTED_ADDRESS).unwrap();
     let registry = Address::from_str(TEST_REGISTRY).unwrap();
 
-    let signed = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry)
+    let signed = sign_registration_challenge(TEST_PRIVATE_KEY, human, TEST_CHAIN_ID, registry, 0)
         .await
         .unwrap();
 

@@ -21,6 +21,8 @@ export const REGISTRY_ABI = [
   // ERC-8004: proof expiry
   "function proofExpiresAt(uint256 agentId) view returns (uint256)",
   "function isProofFresh(uint256 agentId) view returns (bool)",
+  // Replay-protection nonces for registration signatures
+  "function agentNonces(address agent) view returns (uint256)",
 ] as const;
 
 /** ABI for IHumanProofProvider — used to query provider metadata */

@@ -146,10 +146,12 @@ export async function POST(req: NextRequest) {
       agentPrivateKey = wallet.privateKey;
       agentAddress = wallet.address;
 
+      // Nonce is 0 for freshly generated agent wallets (never registered before)
       const signedChallenge = await signRegistrationChallenge(agentPrivateKey, {
         humanIdentifier: humanAddress,
         chainId: networkConfig.chainId,
         registryAddress: networkConfig.registryAddress,
+        nonce: 0,
       });
 
       userDefinedData = buildAdvancedRegisterUserDataAscii({
@@ -164,10 +166,12 @@ export async function POST(req: NextRequest) {
       agentAddress = wallet.address;
       humanAddress = agentAddress; // userId = agent address for wallet-free
 
+      // Nonce is 0 for freshly generated agent wallets (never registered before)
       const signedChallenge = await signRegistrationChallenge(agentPrivateKey, {
         humanIdentifier: ethers.getAddress(agentAddress),
         chainId: networkConfig.chainId,
         registryAddress: networkConfig.registryAddress,
+        nonce: 0,
       });
 
       userDefinedData = buildWalletFreeRegisterUserDataAscii({

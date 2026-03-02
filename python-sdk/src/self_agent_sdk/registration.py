@@ -110,27 +110,32 @@ def compute_registration_challenge_hash(
     human_identifier: str,
     chain_id: int,
     registry_address: str,
+    nonce: int = 0,
 ) -> str:
     """Compute the Keccak-256 hash of the registration challenge message.
 
     The challenge is constructed using Solidity-style tight packing of the
-    prefix string, human identifier address, chain ID, and registry address.
+    prefix string, human identifier address, chain ID, registry address,
+    and agent nonce.
 
     Args:
         human_identifier: Checksummed Ethereum address of the human owner.
         chain_id: EVM chain ID (e.g., 42220 for Celo mainnet).
         registry_address: Checksummed address of the SelfAgentRegistry contract.
+        nonce: The agent's current registration nonce from ``agentNonces(agent)``.
+            Use 0 for first-time registrations.
 
     Returns:
         Hex-encoded hash string prefixed with '0x'.
     """
     digest = Web3.solidity_keccak(
-        ["string", "address", "uint256", "address"],
+        ["string", "address", "uint256", "address", "uint256"],
         [
             "self-agent-id:register:",
             _normalize_address(human_identifier),
             int(chain_id),
             _normalize_address(registry_address),
+            int(nonce),
         ],
     )
     return "0x" + digest.hex()
@@ -141,6 +146,7 @@ def sign_registration_challenge(
     human_identifier: str,
     chain_id: int,
     registry_address: str,
+    nonce: int = 0,
 ) -> SignedRegistrationChallenge:
     """Sign a registration challenge with the agent's private key.
 
@@ -152,6 +158,8 @@ def sign_registration_challenge(
         human_identifier: Checksummed Ethereum address of the human owner.
         chain_id: EVM chain ID.
         registry_address: Checksummed address of the SelfAgentRegistry contract.
+        nonce: The agent's current registration nonce from ``agentNonces(agent)``.
+            Use 0 for first-time registrations.
 
     Returns:
         A SignedRegistrationChallenge containing the hash, signature components,
@@ -162,6 +170,7 @@ def sign_registration_challenge(
         human_identifier=human_identifier,
         chain_id=chain_id,
         registry_address=registry_address,
+        nonce=nonce,
     )
     signable = encode_defunct(hexstr=message_hash)
     signed = acct.sign_message(signable)

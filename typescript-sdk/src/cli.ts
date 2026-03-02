@@ -683,10 +683,12 @@ async function commandInit(
       agentPrivateKey = wallet.privateKey;
       agentAddress = wallet.address;
 
+      // Nonce is 0 for freshly generated agent wallets (never registered before)
       const signed = await signRegistrationChallenge(agentPrivateKey, {
         humanIdentifier,
         chainId: network.chainId,
         registryAddress: network.registryAddress,
+        nonce: 0,
       });
 
       challengeHash = signed.messageHash;
@@ -702,10 +704,12 @@ async function commandInit(
       agentAddress = wallet.address;
       humanIdentifier = agentAddress;
 
+      // Nonce is 0 for freshly generated agent wallets (never registered before)
       const signed = await signRegistrationChallenge(agentPrivateKey, {
         humanIdentifier,
         chainId: network.chainId,
         registryAddress: network.registryAddress,
+        nonce: 0,
       });
 
       challengeHash = signed.messageHash;
@@ -721,10 +725,12 @@ async function commandInit(
       agentAddress = wallet.address;
       humanIdentifier = agentAddress;
 
+      // Nonce is 0 for freshly generated agent wallets (never registered before)
       const signed = await signRegistrationChallenge(agentPrivateKey, {
         humanIdentifier,
         chainId: network.chainId,
         registryAddress: network.registryAddress,
+        nonce: 0,
       });
 
       challengeHash = signed.messageHash;

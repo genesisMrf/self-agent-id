@@ -97,6 +97,17 @@ REGISTRY_ABI = [
     {"name": "agentRegisteredAt", "type": "function", "stateMutability": "view",
      "inputs": [{"name": "agentId", "type": "uint256"}],
      "outputs": [{"name": "", "type": "uint256"}]},
+    # ERC-8004: proof expiry
+    {"name": "proofExpiresAt", "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "agentId", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
+    {"name": "isProofFresh", "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "agentId", "type": "uint256"}],
+     "outputs": [{"name": "", "type": "bool"}]},
+    # Replay-protection nonces for registration signatures
+    {"name": "agentNonces", "type": "function", "stateMutability": "view",
+     "inputs": [{"name": "agent", "type": "address"}],
+     "outputs": [{"name": "", "type": "uint256"}]},
 ]
 
 # ABI for IHumanProofProvider — used to query provider metadata

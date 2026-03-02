@@ -55,21 +55,23 @@ describe("registration helpers", () => {
     );
   });
 
-  it("computes chain+registry-bound challenge hash", () => {
+  it("computes chain+registry-bound challenge hash with nonce", () => {
     const computed = computeRegistrationChallengeHash({
       humanIdentifier: HUMAN,
       chainId: CHAIN_ID,
       registryAddress: REGISTRY,
+      nonce: 0,
     });
 
     const expected = ethers.keccak256(
       ethers.solidityPacked(
-        ["string", "address", "uint256", "address"],
+        ["string", "address", "uint256", "address", "uint256"],
         [
           "self-agent-id:register:",
           ethers.getAddress(HUMAN),
           BigInt(CHAIN_ID),
           ethers.getAddress(REGISTRY),
+          0n,
         ],
       ),
     );
@@ -77,11 +79,28 @@ describe("registration helpers", () => {
     assert.strictEqual(computed, expected);
   });
 
+  it("produces different hashes for different nonces", () => {
+    const hash0 = computeRegistrationChallengeHash({
+      humanIdentifier: HUMAN,
+      chainId: CHAIN_ID,
+      registryAddress: REGISTRY,
+      nonce: 0,
+    });
+    const hash1 = computeRegistrationChallengeHash({
+      humanIdentifier: HUMAN,
+      chainId: CHAIN_ID,
+      registryAddress: REGISTRY,
+      nonce: 1,
+    });
+    assert.notStrictEqual(hash0, hash1);
+  });
+
   it("signs registration challenge and recovers expected address", async () => {
     const signed = await signRegistrationChallenge(AGENT_PK, {
       humanIdentifier: HUMAN,
       chainId: CHAIN_ID,
       registryAddress: REGISTRY,
+      nonce: 0,
     });
 
     const sig = ethers.Signature.from(signed.signature);
@@ -105,6 +124,7 @@ describe("registration helpers", () => {
       humanIdentifier: HUMAN,
       chainId: CHAIN_ID,
       registryAddress: REGISTRY,
+      nonce: 0,
     });
 
     const agentAddr = signed.agentAddress;
@@ -145,6 +165,7 @@ describe("registration helpers", () => {
       humanIdentifier: HUMAN,
       chainId: CHAIN_ID,
       registryAddress: REGISTRY,
+      nonce: 0,
     });
 
     const simpleR = buildSimpleRegisterUserDataBinary({ minimumAge: 18 });

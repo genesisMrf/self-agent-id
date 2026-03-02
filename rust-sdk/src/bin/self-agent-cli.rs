@@ -454,7 +454,8 @@ async fn command_init(flags: &HashMap<String, String>, operation: &str) -> Resul
             let reg_addr =
                 Address::from_str(&network.registry_address).map_err(|e| e.to_string())?;
             let human_addr = Address::from_str(&human_identifier).map_err(|e| e.to_string())?;
-            let signed = sign_registration_challenge(&pk, human_addr, network.chain_id, reg_addr)
+            // Nonce is 0 for freshly generated agent wallets (never registered before)
+            let signed = sign_registration_challenge(&pk, human_addr, network.chain_id, reg_addr, 0)
                 .await
                 .map_err(|e| e.to_string())?;
             challenge_hash = Some(signed.message_hash.clone());

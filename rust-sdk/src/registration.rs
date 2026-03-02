@@ -68,17 +68,22 @@ pub fn get_registration_config_index(disclosures: &RegistrationDisclosures) -> u
 
 /// Compute the keccak256 hash of the registration challenge.
 ///
-/// The challenge is `abi.encodePacked("self-agent-id:register:", humanIdentifier, chainId, registryAddress)`.
+/// The challenge is `abi.encodePacked("self-agent-id:register:", humanIdentifier, chainId, registryAddress, nonce)`.
+///
+/// The `nonce` parameter is the agent's current registration nonce from `agentNonces(agent)`.
+/// Use 0 for first-time registrations.
 pub fn compute_registration_challenge_hash(
     human_identifier: Address,
     chain_id: u64,
     registry_address: Address,
+    nonce: u64,
 ) -> [u8; 32] {
     let packed = (
         "self-agent-id:register:".to_string(),
         human_identifier,
         U256::from(chain_id),
         registry_address,
+        U256::from(nonce),
     )
         .abi_encode_packed();
     keccak256(packed).into()
@@ -88,16 +93,20 @@ pub fn compute_registration_challenge_hash(
 ///
 /// Returns a [`SignedRegistrationChallenge`] containing the message hash,
 /// signature components, and derived agent address.
+///
+/// The `nonce` parameter is the agent's current registration nonce from `agentNonces(agent)`.
+/// Use 0 for first-time registrations.
 pub async fn sign_registration_challenge(
     private_key: &str,
     human_identifier: Address,
     chain_id: u64,
     registry_address: Address,
+    nonce: u64,
 ) -> Result<SignedRegistrationChallenge, crate::Error> {
     let signer: PrivateKeySigner = private_key
         .parse::<PrivateKeySigner>()
         .map_err(|_| crate::Error::InvalidPrivateKey)?;
-    let hash = compute_registration_challenge_hash(human_identifier, chain_id, registry_address);
+    let hash = compute_registration_challenge_hash(human_identifier, chain_id, registry_address, nonce);
     let sig = signer
         .sign_message(&hash)
         .await

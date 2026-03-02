@@ -745,9 +745,7 @@ export default function RegisterPage() {
                 }`}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-                    <PrivyIcon size={16} />
-                  </span>
+                  <PrivyIcon size={20} />
                   <span className="font-bold text-sm">
                     Social Login (Privy)
                   </span>

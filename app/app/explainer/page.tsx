@@ -389,9 +389,7 @@ export default function ExplainerPage() {
             {/* Social Login (Privy) */}
             <Card className="md:col-span-2">
               <div className="flex items-center gap-2 mb-4">
-                <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-                  <PrivyIcon size={16} />
-                </span>
+                <PrivyIcon size={20} />
                 <h3 className="font-bold text-lg">Social Login (Privy)</h3>
               </div>
               <p className="text-sm font-medium mb-2">

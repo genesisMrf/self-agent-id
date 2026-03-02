@@ -856,7 +856,7 @@ function renderAgentCards(
             <p className="font-mono text-sm break-all">{agent.agentAddress}</p>
           </div>
 
-          {agent.credentials && (
+          {agent.credentials && buildDisclosureBadges(agent.credentials).length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {buildDisclosureBadges(agent.credentials).map((badge, i) => (
                 <span

@@ -2,23 +2,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 // NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
 
+import type { Eip1193Provider } from "ethers";
 import type { NetworkConfig } from "./network";
-
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: {
-        method: string;
-        params?: unknown[];
-      }) => Promise<unknown>;
-      on: (event: string, callback: (...args: unknown[]) => void) => void;
-      removeListener: (
-        event: string,
-        callback: (...args: unknown[]) => void,
-      ) => void;
-    };
-  }
-}
 
 export async function connectWallet(
   network: NetworkConfig,
@@ -28,19 +13,21 @@ export async function connectWallet(
     return null;
   }
 
-  const accounts = (await window.ethereum.request({
+  const eth = window.ethereum as unknown as Eip1193Provider;
+
+  const accounts = (await eth.request({
     method: "eth_requestAccounts",
   })) as string[];
 
   // Switch to the selected network
   try {
-    await window.ethereum.request({
+    await eth.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: network.chainIdHex }],
     });
   } catch (switchError: unknown) {
     if ((switchError as { code: number }).code === 4902) {
-      await window.ethereum.request({
+      await eth.request({
         method: "wallet_addEthereumChain",
         params: [
           {

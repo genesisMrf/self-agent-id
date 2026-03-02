@@ -26,6 +26,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import { PrivyIcon } from "@/components/PrivyIcon";
 import CodeBlock from "@/components/CodeBlock";
 import {
   getServiceSnippets,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/snippets";
 import { connectWallet } from "@/lib/wallet";
 import {} from "@/lib/constants";
+import { usePrivyState, isPrivyConfigured } from "@/lib/privy";
 import type { A2AAgentCard } from "@selfxyz/agent-sdk";
 import { useNetwork } from "@/lib/NetworkContext";
 import { Card } from "@/components/Card";
@@ -125,6 +127,24 @@ function VerifyContent() {
   );
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+
+  const {
+    login: privyLogin,
+    authenticated: privyAuthenticated,
+    wallets: privyWallets,
+  } = usePrivyState();
+
+  // When Privy authenticates, set wallet address from embedded wallet
+  const privyEmbeddedAddress = privyAuthenticated
+    ? privyWallets.find(
+        (w: { walletClientType: string }) => w.walletClientType === "privy",
+      )?.address
+    : undefined;
+
+  useEffect(() => {
+    if (!privyEmbeddedAddress || walletAddress) return;
+    setWalletAddress(ethers.getAddress(privyEmbeddedAddress).toLowerCase());
+  }, [privyEmbeddedAddress, walletAddress]);
 
   useEffect(() => {
     setPasskeyAvailable(isPasskeySupported());
@@ -770,13 +790,25 @@ function VerifyContent() {
                   </Card>
                 )
               ) : !walletAddress ? (
-                <Button
-                  onClick={() => void handleConnectForDeregister()}
-                  variant="danger"
-                  size="sm"
-                >
-                  Connect wallet to deregister
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => void handleConnectForDeregister()}
+                    variant="danger"
+                    size="sm"
+                  >
+                    Connect wallet to deregister
+                  </Button>
+                  {isPrivyConfigured() && privyLogin && (
+                    <Button
+                      onClick={() => privyLogin()}
+                      variant="danger"
+                      size="sm"
+                    >
+                      <PrivyIcon size={14} />
+                      Sign in with Privy
+                    </Button>
+                  )}
+                </div>
               ) : walletAddress.toLowerCase() ===
                 agentInfo.owner.toLowerCase() ? (
                 !showDeregister ? (

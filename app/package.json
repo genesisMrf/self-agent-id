@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@privy-io/react-auth": "^2.12.1",
     "@selfxyz/agent-sdk": "0.1.1",
     "@selfxyz/qrcode": "^1.0.18",
     "@vercel/analytics": "^1.6.1",

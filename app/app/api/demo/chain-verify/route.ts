@@ -86,233 +86,240 @@ export async function POST(req: NextRequest) {
 
   try {
     // 2. Parse request body
-  let agentKey: string;
-  let nonce: string;
-  let deadline: number;
-  let eip712Signature: string;
-  let networkId: NetworkId;
-  try {
-    const parsed = JSON.parse(bodyText) as unknown;
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("Invalid JSON object");
-    }
-    const bodyObj = parsed as Record<string, unknown>;
-
-    agentKey = typeof bodyObj.agentKey === "string" ? bodyObj.agentKey : "";
-    const rawNonce = bodyObj.nonce;
-    nonce =
-      typeof rawNonce === "string"
-        ? rawNonce
-        : typeof rawNonce === "number"
-          ? String(rawNonce)
-          : "";
-    const rawDeadline = bodyObj.deadline;
-    deadline =
-      typeof rawDeadline === "number"
-        ? rawDeadline
-        : typeof rawDeadline === "string"
-          ? Number(rawDeadline)
-          : Number.NaN;
-    eip712Signature =
-      typeof bodyObj.eip712Signature === "string"
-        ? bodyObj.eip712Signature
-        : "";
-
-    const rawNetworkId = bodyObj.networkId;
-    networkId =
-      typeof rawNetworkId === "string" && rawNetworkId in NETWORKS
-        ? (rawNetworkId as NetworkId)
-        : "celo-sepolia";
-
-    if (!agentKey || !nonce || !Number.isFinite(deadline) || !eip712Signature) {
-      throw new Error("Missing fields");
-    }
-  } catch {
-    return NextResponse.json(
-      {
-        error:
-          "Invalid request body — expected { agentKey, nonce, deadline, eip712Signature, networkId? }",
-      },
-      { status: 400 },
-    );
-  }
-
-  // 3. Resolve network config
-  const network = getNetwork(networkId);
-  if (!network.registryAddress || !network.agentDemoVerifierAddress) {
-    return NextResponse.json(
-      { error: `Network ${networkId} not configured for demo verification` },
-      { status: 400 },
-    );
-  }
-
-  // 4. Set up provider + contracts
-  const provider = new ethers.JsonRpcProvider(network.rpcUrl);
-  const relayerWallet = new ethers.Wallet(RELAYER_PK, provider);
-  const contract = typedDemoVerifier(
-    network.agentDemoVerifierAddress,
-    relayerWallet,
-  );
-  const registryContract = typedRegistry(network.registryAddress, provider);
-
-  // 6. Simulate via staticCall — the CONTRACT verifies the agent on-chain:
-  //    ecrecover(EIP-712 digest) → derive agentKey → isVerifiedAgent(agentKey)
-  //    Reverts with NotVerifiedAgent, MetaTxExpired, MetaTxInvalidNonce, or MetaTxInvalidSignature
-  try {
-    await contract.metaVerifyAgent.staticCall(
-      agentKey,
-      BigInt(nonce),
-      BigInt(deadline),
-      eip712Signature,
-    );
-  } catch (simErr) {
-    let reason = "On-chain simulation failed";
-    if (simErr instanceof Error) {
-      const msg = simErr.message;
-      if (msg.includes("NotVerifiedAgent")) {
-        reason =
-          "Contract rejected: agent not verified in registry (isVerifiedAgent returned false)";
-      } else if (msg.includes("MetaTxExpired")) {
-        reason = "Contract rejected: meta-transaction deadline expired";
-      } else if (msg.includes("MetaTxInvalidNonce")) {
-        reason = "Contract rejected: invalid nonce (replay or out of order)";
-      } else if (msg.includes("MetaTxInvalidSignature")) {
-        reason =
-          "Contract rejected: EIP-712 signature invalid — signer does not match agent key";
-      } else {
-        reason = `Contract rejected: ${msg.slice(0, 200)}`;
+    let agentKey: string;
+    let nonce: string;
+    let deadline: number;
+    let eip712Signature: string;
+    let networkId: NetworkId;
+    try {
+      const parsed = JSON.parse(bodyText) as unknown;
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Invalid JSON object");
       }
-    }
-    return NextResponse.json({ error: reason }, { status: 400 });
-  }
+      const bodyObj = parsed as Record<string, unknown>;
 
-  // 7. Replay protection — recorded AFTER validation to prevent cache poisoning
-  const replay = await checkAndRecordReplay({
-    signature,
-    timestamp,
-    method: "POST",
-    url: req.url,
-    body: bodyText || undefined,
-    scope: "demo-chain-verify",
-  });
-  if (!replay.ok) {
-    return NextResponse.json(
-      { error: replay.error || "Replay detected" },
-      { status: 409 },
-    );
-  }
+      agentKey = typeof bodyObj.agentKey === "string" ? bodyObj.agentKey : "";
+      const rawNonce = bodyObj.nonce;
+      nonce =
+        typeof rawNonce === "string"
+          ? rawNonce
+          : typeof rawNonce === "number"
+            ? String(rawNonce)
+            : "";
+      const rawDeadline = bodyObj.deadline;
+      deadline =
+        typeof rawDeadline === "number"
+          ? rawDeadline
+          : typeof rawDeadline === "string"
+            ? Number(rawDeadline)
+            : Number.NaN;
+      eip712Signature =
+        typeof bodyObj.eip712Signature === "string"
+          ? bodyObj.eip712Signature
+          : "";
 
-  // 8. Rate limit by human nullifier (only reachable if agent is verified)
-  let rateLimitResult: {
-    allowed: boolean;
-    remaining: number;
-    retryAfterMs?: number;
-  };
-  try {
-    const agentId = await registryContract.getAgentId(agentKey);
-    const nullifier = await registryContract.getHumanNullifier(agentId);
-    rateLimitResult = checkRateLimit(nullifier.toString());
-    if (!rateLimitResult.allowed) {
-      const retryMin = Math.ceil((rateLimitResult.retryAfterMs || 0) / 60_000);
+      const rawNetworkId = bodyObj.networkId;
+      networkId =
+        typeof rawNetworkId === "string" && rawNetworkId in NETWORKS
+          ? (rawNetworkId as NetworkId)
+          : "celo-sepolia";
+
+      if (
+        !agentKey ||
+        !nonce ||
+        !Number.isFinite(deadline) ||
+        !eip712Signature
+      ) {
+        throw new Error("Missing fields");
+      }
+    } catch {
       return NextResponse.json(
         {
-          error: `Rate limited — 3 per hour per human. Retry in ~${retryMin} min.`,
-          rateLimitRemaining: 0,
-          retryAfterMs: rateLimitResult.retryAfterMs,
+          error:
+            "Invalid request body — expected { agentKey, nonce, deadline, eip712Signature, networkId? }",
         },
-        { status: 429 },
+        { status: 400 },
       );
     }
-  } catch {
-    return NextResponse.json(
-      { error: "Unable to verify rate limit — try again later" },
-      { status: 503 },
-    );
-  }
 
-  // 8. Submit real transaction (with timeout for Vercel serverless)
-  // Fetch credentials via SDK for the response (the contract doesn't return them)
-  const verifier = getCachedVerifier(networkId, {
-    maxAgentsPerHuman: 0,
-    includeCredentials: true,
-    enableReplayProtection: false, // already checked above
-  });
-  const sdkResult = await verifier.verify({
-    signature,
-    timestamp,
-    method: "POST",
-    url: req.url,
-    body: bodyText || undefined,
-  });
-
-  let txHash = "";
-  try {
-    const tx = await contract.metaVerifyAgent(
-      agentKey,
-      BigInt(nonce),
-      BigInt(deadline),
-      eip712Signature,
-    );
-    txHash = tx.hash;
-
-    // Wait for confirmation with 8s timeout (Vercel serverless has 10s limit)
-    const receipt = await Promise.race([
-      tx.wait(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("TIMEOUT")), 8_000),
-      ),
-    ]);
-
-    if (!receipt) {
-      return NextResponse.json({
-        txHash,
-        status: "pending",
-        message: "Transaction submitted but receipt not available yet",
-      });
+    // 3. Resolve network config
+    const network = getNetwork(networkId);
+    if (!network.registryAddress || !network.agentDemoVerifierAddress) {
+      return NextResponse.json(
+        { error: `Network ${networkId} not configured for demo verification` },
+        { status: 400 },
+      );
     }
 
-    // Read counters after tx
-    const [verCount, totalCount] = await Promise.all([
-      contract.verificationCount(agentKey),
-      contract.totalVerifications(),
-    ]);
+    // 4. Set up provider + contracts
+    const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+    const relayerWallet = new ethers.Wallet(RELAYER_PK, provider);
+    const contract = typedDemoVerifier(
+      network.agentDemoVerifierAddress,
+      relayerWallet,
+    );
+    const registryContract = typedRegistry(network.registryAddress, provider);
 
-    return NextResponse.json({
-      txHash: receipt.hash,
-      blockNumber: receipt.blockNumber,
-      explorerUrl: `${network.blockExplorer}/tx/${receipt.hash}`,
-      agentAddress: sdkResult.valid ? sdkResult.agentAddress : undefined,
-      agentId: sdkResult.valid ? sdkResult.agentId.toString() : undefined,
-      credentials:
-        sdkResult.valid && sdkResult.credentials
-          ? {
-              olderThan: sdkResult.credentials.olderThan.toString(),
-              nationality: sdkResult.credentials.nationality,
-            }
-          : undefined,
-      verificationCount: verCount.toString(),
-      totalVerifications: totalCount.toString(),
-      gasUsed: receipt.gasUsed?.toString(),
-      rateLimitRemaining: rateLimitResult.remaining,
+    // 6. Simulate via staticCall — the CONTRACT verifies the agent on-chain:
+    //    ecrecover(EIP-712 digest) → derive agentKey → isVerifiedAgent(agentKey)
+    //    Reverts with NotVerifiedAgent, MetaTxExpired, MetaTxInvalidNonce, or MetaTxInvalidSignature
+    try {
+      await contract.metaVerifyAgent.staticCall(
+        agentKey,
+        BigInt(nonce),
+        BigInt(deadline),
+        eip712Signature,
+      );
+    } catch (simErr) {
+      let reason = "On-chain simulation failed";
+      if (simErr instanceof Error) {
+        const msg = simErr.message;
+        if (msg.includes("NotVerifiedAgent")) {
+          reason =
+            "Contract rejected: agent not verified in registry (isVerifiedAgent returned false)";
+        } else if (msg.includes("MetaTxExpired")) {
+          reason = "Contract rejected: meta-transaction deadline expired";
+        } else if (msg.includes("MetaTxInvalidNonce")) {
+          reason = "Contract rejected: invalid nonce (replay or out of order)";
+        } else if (msg.includes("MetaTxInvalidSignature")) {
+          reason =
+            "Contract rejected: EIP-712 signature invalid — signer does not match agent key";
+        } else {
+          reason = `Contract rejected: ${msg.slice(0, 200)}`;
+        }
+      }
+      return NextResponse.json({ error: reason }, { status: 400 });
+    }
+
+    // 7. Replay protection — recorded AFTER validation to prevent cache poisoning
+    const replay = await checkAndRecordReplay({
+      signature,
+      timestamp,
+      method: "POST",
+      url: req.url,
+      body: bodyText || undefined,
+      scope: "demo-chain-verify",
     });
-  } catch (txErr) {
-    if (txErr instanceof Error && txErr.message === "TIMEOUT") {
-      // Tx submitted but confirmation timed out — return hash for explorer link
+    if (!replay.ok) {
+      return NextResponse.json(
+        { error: replay.error || "Replay detected" },
+        { status: 409 },
+      );
+    }
+
+    // 8. Rate limit by human nullifier (only reachable if agent is verified)
+    let rateLimitResult: {
+      allowed: boolean;
+      remaining: number;
+      retryAfterMs?: number;
+    };
+    try {
+      const agentId = await registryContract.getAgentId(agentKey);
+      const nullifier = await registryContract.getHumanNullifier(agentId);
+      rateLimitResult = checkRateLimit(nullifier.toString());
+      if (!rateLimitResult.allowed) {
+        const retryMin = Math.ceil(
+          (rateLimitResult.retryAfterMs || 0) / 60_000,
+        );
+        return NextResponse.json(
+          {
+            error: `Rate limited — 3 per hour per human. Retry in ~${retryMin} min.`,
+            rateLimitRemaining: 0,
+            retryAfterMs: rateLimitResult.retryAfterMs,
+          },
+          { status: 429 },
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Unable to verify rate limit — try again later" },
+        { status: 503 },
+      );
+    }
+
+    // 8. Submit real transaction (with timeout for Vercel serverless)
+    // Fetch credentials via SDK for the response (the contract doesn't return them)
+    const verifier = getCachedVerifier(networkId, {
+      maxAgentsPerHuman: 0,
+      includeCredentials: true,
+      enableReplayProtection: false, // already checked above
+    });
+    const sdkResult = await verifier.verify({
+      signature,
+      timestamp,
+      method: "POST",
+      url: req.url,
+      body: bodyText || undefined,
+    });
+
+    let txHash = "";
+    try {
+      const tx = await contract.metaVerifyAgent(
+        agentKey,
+        BigInt(nonce),
+        BigInt(deadline),
+        eip712Signature,
+      );
+      txHash = tx.hash;
+
+      // Wait for confirmation with 8s timeout (Vercel serverless has 10s limit)
+      const receipt = await Promise.race([
+        tx.wait(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("TIMEOUT")), 8_000),
+        ),
+      ]);
+
+      if (!receipt) {
+        return NextResponse.json({
+          txHash,
+          status: "pending",
+          message: "Transaction submitted but receipt not available yet",
+        });
+      }
+
+      // Read counters after tx
+      const [verCount, totalCount] = await Promise.all([
+        contract.verificationCount(agentKey),
+        contract.totalVerifications(),
+      ]);
+
       return NextResponse.json({
-        txHash,
-        pending: true,
-        explorerUrl: `${network.blockExplorer}/tx/${txHash}`,
+        txHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        explorerUrl: `${network.blockExplorer}/tx/${receipt.hash}`,
         agentAddress: sdkResult.valid ? sdkResult.agentAddress : undefined,
         agentId: sdkResult.valid ? sdkResult.agentId.toString() : undefined,
+        credentials:
+          sdkResult.valid && sdkResult.credentials
+            ? {
+                olderThan: sdkResult.credentials.olderThan.toString(),
+                nationality: sdkResult.credentials.nationality,
+              }
+            : undefined,
+        verificationCount: verCount.toString(),
+        totalVerifications: totalCount.toString(),
+        gasUsed: receipt.gasUsed?.toString(),
         rateLimitRemaining: rateLimitResult.remaining,
       });
+    } catch (txErr) {
+      if (txErr instanceof Error && txErr.message === "TIMEOUT") {
+        // Tx submitted but confirmation timed out — return hash for explorer link
+        return NextResponse.json({
+          txHash,
+          pending: true,
+          explorerUrl: `${network.blockExplorer}/tx/${txHash}`,
+          agentAddress: sdkResult.valid ? sdkResult.agentAddress : undefined,
+          agentId: sdkResult.valid ? sdkResult.agentId.toString() : undefined,
+          rateLimitRemaining: rateLimitResult.remaining,
+        });
+      }
+      let reason = "Transaction failed";
+      if (txErr instanceof Error) {
+        reason = txErr.message.slice(0, 200);
+      }
+      return NextResponse.json({ error: reason }, { status: 500 });
     }
-    let reason = "Transaction failed";
-    if (txErr instanceof Error) {
-      reason = txErr.message.slice(0, 200);
-    }
-    return NextResponse.json({ error: reason }, { status: 500 });
-  }
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Internal chain-verify error";

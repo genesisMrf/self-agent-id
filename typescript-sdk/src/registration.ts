@@ -16,7 +16,8 @@ export type RegistrationMode =
   | "verified-wallet"
   | "agent-identity"
   | "wallet-free"
-  | "smart-wallet";
+  | "smart-wallet"
+  | "privy";
 
 /**
  * Disclosure requirements that map to a verification config index (0..5)

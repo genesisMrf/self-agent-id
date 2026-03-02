@@ -1235,7 +1235,7 @@ async function runGateTest(
       eip712Signer = new ethers.Wallet(privateKey);
       log(id, "Signing EIP-712 with agent key (secp256k1)...");
     } else if (window.ethereum) {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const browserProvider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
       const signer = await browserProvider.getSigner();
       eip712Signer = signer as ethers.Signer & {
         signTypedData: typeof ethers.Wallet.prototype.signTypedData;
@@ -1854,7 +1854,7 @@ export default function DemoPage() {
           "No wallet detected. Install MetaMask or another browser wallet.",
         );
       }
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
 

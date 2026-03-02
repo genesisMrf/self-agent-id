@@ -87,9 +87,16 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   // Privy mode state
-  const [privyWalletAddress, setPrivyWalletAddress] = useState<string | null>(null);
+  const [privyWalletAddress, setPrivyWalletAddress] = useState<string | null>(
+    null,
+  );
 
-  const { login: privyLogin, ready: privyReady, authenticated: privyAuthenticated, wallets: privyWallets } = usePrivyState();
+  const {
+    login: privyLogin,
+    ready: privyReady,
+    authenticated: privyAuthenticated,
+    wallets: privyWallets,
+  } = usePrivyState();
   const pendingRedirect = useRef(false);
 
   useEffect(() => {
@@ -417,7 +424,7 @@ export default function RegisterPage() {
     if (mode !== "privy" || !privyAuthenticated) return;
     // Find embedded wallet
     const embedded = privyWallets.find(
-      (w: { walletClientType: string }) => w.walletClientType === "privy"
+      (w: { walletClientType: string }) => w.walletClientType === "privy",
     );
     if (!embedded) return;
     if (!loading && !pendingRedirect.current) return;
@@ -450,9 +457,12 @@ export default function RegisterPage() {
         const rHex = sig.r.slice(2);
         const sHex = sig.s.slice(2);
         const vHex = sig.v.toString(16).padStart(2, "0");
-        const userDefinedData = "K" + cfgIdx + agentAddrHex + rHex + sHex + vHex;
+        const userDefinedData =
+          "K" + cfgIdx + agentAddrHex + rHex + sHex + vHex;
 
-        setSelfApp(buildSelfApp(embeddedAddress.toLowerCase(), userDefinedData));
+        setSelfApp(
+          buildSelfApp(embeddedAddress.toLowerCase(), userDefinedData),
+        );
         setStep("scan");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -463,8 +473,14 @@ export default function RegisterPage() {
     };
 
     completePrivyRegistration();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, privyAuthenticated, privyWallets.length, loading, privyWalletAddress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mode,
+    privyAuthenticated,
+    privyWallets.length,
+    loading,
+    privyWalletAddress,
+  ]);
 
   const handlePrivyStart = async () => {
     setErrorMessage("");
@@ -497,7 +513,9 @@ export default function RegisterPage() {
         mode === "simple" ? walletAddress! : agentWallet!.address;
       const agentKey = ethers.zeroPadValue(agentAddress, 32);
 
-      const provider = new ethers.BrowserProvider(window.ethereum! as unknown as ethers.Eip1193Provider);
+      const provider = new ethers.BrowserProvider(
+        window.ethereum! as unknown as ethers.Eip1193Provider,
+      );
       const registry = typedRegistry(network.registryAddress, provider);
 
       const agentId: bigint = await registry.getAgentId(agentKey);
@@ -730,10 +748,13 @@ export default function RegisterPage() {
                   <span className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
                     <PrivyIcon size={16} />
                   </span>
-                  <span className="font-bold text-sm">Social Login (Privy)</span>
+                  <span className="font-bold text-sm">
+                    Social Login (Privy)
+                  </span>
                 </div>
                 <p className="text-xs text-muted mt-2">
-                  Sign in with email, Google, or Twitter. No browser extension needed. Privy creates an embedded wallet for you.
+                  Sign in with email, Google, or Twitter. No browser extension
+                  needed. Privy creates an embedded wallet for you.
                 </p>
               </button>
             )}
@@ -848,24 +869,35 @@ export default function RegisterPage() {
             ) : mode === "privy" ? (
               <ul className="text-sm text-muted space-y-1.5 list-disc list-inside">
                 <li>
-                  Sign in with <strong className="text-foreground">email, Google, or Twitter</strong> via Privy.
-                  No browser extension or seed phrase needed.
+                  Sign in with{" "}
+                  <strong className="text-foreground">
+                    email, Google, or Twitter
+                  </strong>{" "}
+                  via Privy. No browser extension or seed phrase needed.
                 </li>
                 <li>
-                  Privy creates an <strong className="text-foreground">embedded wallet</strong> for you automatically.
-                  This wallet address becomes the NFT owner (human identifier).
+                  Privy creates an{" "}
+                  <strong className="text-foreground">embedded wallet</strong>{" "}
+                  for you automatically. This wallet address becomes the NFT
+                  owner (human identifier).
                 </li>
                 <li>
-                  A fresh <strong className="text-foreground">agent keypair</strong> is generated in your browser.
-                  The agent signs a challenge proving key ownership, same as Agent Identity mode.
+                  A fresh{" "}
+                  <strong className="text-foreground">agent keypair</strong> is
+                  generated in your browser. The agent signs a challenge proving
+                  key ownership, same as Agent Identity mode.
                 </li>
                 <li>
-                  Scan your passport with the <strong className="text-foreground">Self app</strong> &mdash;
-                  the contract verifies both the ZK proof and the agent signature in one step.
+                  Scan your passport with the{" "}
+                  <strong className="text-foreground">Self app</strong> &mdash;
+                  the contract verifies both the ZK proof and the agent
+                  signature in one step.
                 </li>
                 <li>
-                  Your agent operates with <strong className="text-foreground">its own key</strong>.
-                  The Privy wallet is only used during registration. No Privy dependency at runtime.
+                  Your agent operates with{" "}
+                  <strong className="text-foreground">its own key</strong>. The
+                  Privy wallet is only used during registration. No Privy
+                  dependency at runtime.
                 </li>
               </ul>
             ) : (
@@ -1096,7 +1128,12 @@ export default function RegisterPage() {
               )}
             </Button>
           ) : mode === "privy" ? (
-            <Button onClick={handlePrivyStart} variant="primary" size="lg" disabled={loading || !privyReady}>
+            <Button
+              onClick={handlePrivyStart}
+              variant="primary"
+              size="lg"
+              disabled={loading || !privyReady}
+            >
               {loading ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
@@ -1278,14 +1315,17 @@ export default function RegisterPage() {
               <>
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <PrivyIcon size={14} />
-                  <p className="text-xs text-muted">Social Login (Privy) registration</p>
+                  <p className="text-xs text-muted">
+                    Social Login (Privy) registration
+                  </p>
                 </div>
                 <p className="text-xs text-muted mb-1">Agent address</p>
                 <p className="font-mono text-sm">{agentWallet?.address}</p>
                 <p className="text-xs text-muted mt-2">
                   Owner (Privy wallet):{" "}
                   <span className="font-mono text-foreground">
-                    {privyWalletAddress?.slice(0, 6)}...{privyWalletAddress?.slice(-4)}
+                    {privyWalletAddress?.slice(0, 6)}...
+                    {privyWalletAddress?.slice(-4)}
                   </span>
                 </p>
               </>
@@ -1410,7 +1450,11 @@ export default function RegisterPage() {
           )}
           <Button
             onClick={() => {
-              if (mode === "walletfree" || mode === "smartwallet" || mode === "privy") {
+              if (
+                mode === "walletfree" ||
+                mode === "smartwallet" ||
+                mode === "privy"
+              ) {
                 setStep("mode");
                 setAgentWallet(null);
                 setSmartWalletAddress(null);
@@ -1795,7 +1839,9 @@ export default function RegisterPage() {
               <Card className="w-full">
                 <p className="font-bold text-sm mb-3">Registration Details</p>
                 <div className="space-y-3 text-sm">
-                  {mode === "walletfree" || mode === "smartwallet" || mode === "privy" ? (
+                  {mode === "walletfree" ||
+                  mode === "smartwallet" ||
+                  mode === "privy" ? (
                     <>
                       <div>
                         <p className="text-xs text-muted mb-1">
@@ -1812,7 +1858,9 @@ export default function RegisterPage() {
                           ) : mode === "privy" ? (
                             <>
                               <Badge variant="info">Social Login (Privy)</Badge>
-                              <span className="text-xs text-muted">Embedded wallet as owner</span>
+                              <span className="text-xs text-muted">
+                                Embedded wallet as owner
+                              </span>
                             </>
                           ) : (
                             <>
@@ -1932,9 +1980,10 @@ export default function RegisterPage() {
                     <p className="font-bold text-sm">Privy Wallet Info</p>
                   </div>
                   <p className="text-xs text-muted">
-                    Your Privy embedded wallet owns the agent NFT. To deregister, use the
-                    Agent Identity deregister flow with the same wallet. Your agent operates
-                    independently with its own private key &mdash; no Privy dependency at runtime.
+                    Your Privy embedded wallet owns the agent NFT. To
+                    deregister, use the Agent Identity deregister flow with the
+                    same wallet. Your agent operates independently with its own
+                    private key &mdash; no Privy dependency at runtime.
                   </p>
                 </Card>
               )}

@@ -128,11 +128,17 @@ function VerifyContent() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
 
-  const { login: privyLogin, authenticated: privyAuthenticated, wallets: privyWallets } = usePrivyState();
+  const {
+    login: privyLogin,
+    authenticated: privyAuthenticated,
+    wallets: privyWallets,
+  } = usePrivyState();
 
   // When Privy authenticates, set wallet address from embedded wallet
   const privyEmbeddedAddress = privyAuthenticated
-    ? privyWallets.find((w: { walletClientType: string }) => w.walletClientType === "privy")?.address
+    ? privyWallets.find(
+        (w: { walletClientType: string }) => w.walletClientType === "privy",
+      )?.address
     : undefined;
 
   useEffect(() => {
@@ -793,7 +799,11 @@ function VerifyContent() {
                     Connect wallet to deregister
                   </Button>
                   {isPrivyConfigured() && privyLogin && (
-                    <Button onClick={() => privyLogin!()} variant="danger" size="sm">
+                    <Button
+                      onClick={() => privyLogin!()}
+                      variant="danger"
+                      size="sm"
+                    >
                       <PrivyIcon size={14} />
                       Sign in with Privy
                     </Button>

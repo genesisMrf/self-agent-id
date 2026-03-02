@@ -398,24 +398,37 @@ export default function ExplainerPage() {
                 Email / Google / Twitter &rarr; Embedded Wallet
               </p>
               <p className="text-sm text-muted mb-4">
-                Sign in with a social account via Privy. An embedded wallet is created
-                automatically &mdash; no browser extension or seed phrase. A separate agent
-                keypair is generated, and the on-chain format is identical to Agent Identity
-                (&ldquo;K&rdquo; action). Only the wallet source differs.
+                Sign in with a social account via Privy. An embedded wallet is
+                created automatically &mdash; no browser extension or seed
+                phrase. A separate agent keypair is generated, and the on-chain
+                format is identical to Agent Identity (&ldquo;K&rdquo; action).
+                Only the wallet source differs.
               </p>
               <div className="space-y-2 text-sm text-muted">
-                <p className="font-bold text-foreground">How it&apos;s secured:</p>
+                <p className="font-bold text-foreground">
+                  How it&apos;s secured:
+                </p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Privy authenticates the human via social login (MPC-secured embedded wallet)</li>
-                  <li>Agent generates its own keypair &mdash; signs challenge proving key ownership</li>
+                  <li>
+                    Privy authenticates the human via social login (MPC-secured
+                    embedded wallet)
+                  </li>
+                  <li>
+                    Agent generates its own keypair &mdash; signs challenge
+                    proving key ownership
+                  </li>
                   <li>ZK proof binds human identity to nullifier</li>
-                  <li>Agent operates with its own key at runtime &mdash; no Privy dependency</li>
+                  <li>
+                    Agent operates with its own key at runtime &mdash; no Privy
+                    dependency
+                  </li>
                 </ul>
               </div>
               <div className="mt-4 pt-4 border-t border-border">
                 <p className="text-xs text-muted">
-                  <strong className="text-foreground">Best for:</strong> Users who prefer social login (email, Google, Twitter)
-                  over browser extensions. No crypto wallet setup required.
+                  <strong className="text-foreground">Best for:</strong> Users
+                  who prefer social login (email, Google, Twitter) over browser
+                  extensions. No crypto wallet setup required.
                 </p>
               </div>
             </Card>

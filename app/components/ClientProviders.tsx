@@ -7,7 +7,12 @@
 import { type ReactNode } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { NetworkProvider } from "@/lib/NetworkContext";
-import { isPrivyConfigured, getPrivyAppId, PrivyBridge, PrivyDefaults } from "@/lib/privy";
+import {
+  isPrivyConfigured,
+  getPrivyAppId,
+  PrivyBridge,
+  PrivyDefaults,
+} from "@/lib/privy";
 
 function MaybePrivyProvider({ children }: { children: ReactNode }) {
   if (!isPrivyConfigured()) {

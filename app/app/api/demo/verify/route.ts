@@ -86,9 +86,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Internal verification error";
-    return NextResponse.json(
-      { valid: false, error: message },
-      { status: 500 },
-    );
+    return NextResponse.json({ valid: false, error: message }, { status: 500 });
   }
 }

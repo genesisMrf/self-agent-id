@@ -31,7 +31,12 @@ import {
 } from "@/lib/agent-api-helpers";
 import { checkRateLimit } from "@/lib/rateLimit";
 
-type Mode = "simple" | "verified-wallet" | "agent-identity" | "wallet-free" | "privy";
+type Mode =
+  | "simple"
+  | "verified-wallet"
+  | "agent-identity"
+  | "wallet-free"
+  | "privy";
 
 const VALID_MODES = new Set<Mode>([
   "simple",
@@ -104,7 +109,8 @@ export async function POST(req: NextRequest) {
   const networkConfig = getNetworkConfig(network);
 
   // ── Validate humanAddress (required for simple + agent-identity) ────────
-  const needsHumanAddress = mode === "simple" || mode === "agent-identity" || mode === "privy";
+  const needsHumanAddress =
+    mode === "simple" || mode === "agent-identity" || mode === "privy";
   if (
     needsHumanAddress &&
     (!body.humanAddress || !isValidAddress(body.humanAddress))

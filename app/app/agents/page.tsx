@@ -128,7 +128,12 @@ async function paginatedQueryFilter(
   const latestBlock = await provider.getBlockNumber();
   // Start from a reasonable deployment block to avoid scanning genesis.
   // SelfAgentRegistry was deployed well after block 30M on Celo mainnet.
-  const deployBlock = fromBlockFloor > 0 ? fromBlockFloor : latestBlock > 1_000_000 ? latestBlock - 1_000_000 : 0;
+  const deployBlock =
+    fromBlockFloor > 0
+      ? fromBlockFloor
+      : latestBlock > 1_000_000
+        ? latestBlock - 1_000_000
+        : 0;
   let blockWindow = 50_000;
   const MIN_WINDOW = 10;
   const allEvents: (ethers.EventLog | ethers.Log)[] = [];
@@ -230,16 +235,23 @@ export default function MyAgentsPage() {
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [lookupMode, setLookupMode] = useState<"wallet" | "key" | "passkey" | "privy">(
-    "wallet",
-  );
+  const [lookupMode, setLookupMode] = useState<
+    "wallet" | "key" | "passkey" | "privy"
+  >("wallet");
   const [agentKeyInput, setAgentKeyInput] = useState("");
   const [passkeyAddress, setPasskeyAddress] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
-  const [privyConnectedAddress, setPrivyConnectedAddress] = useState<string | null>(null);
+  const [privyConnectedAddress, setPrivyConnectedAddress] = useState<
+    string | null
+  >(null);
 
-  const { login: privyLogin, ready: privyReady, authenticated: privyAuthenticated, wallets: privyWallets } = usePrivyState();
+  const {
+    login: privyLogin,
+    ready: privyReady,
+    authenticated: privyAuthenticated,
+    wallets: privyWallets,
+  } = usePrivyState();
 
   useEffect(() => {
     setPasskeyAvailable(isPasskeySupported());
@@ -247,18 +259,25 @@ export default function MyAgentsPage() {
 
   // Derive embedded wallet address (stable string or undefined).
   const privyEmbeddedAddress = privyAuthenticated
-    ? privyWallets.find((w: { walletClientType: string }) => w.walletClientType === "privy")?.address
+    ? privyWallets.find(
+        (w: { walletClientType: string }) => w.walletClientType === "privy",
+      )?.address
     : undefined;
 
   // After async Privy sign-in completes (user clicked "Sign in with Privy"),
   // detect the newly available embedded wallet and load agents once.
   // Guarded by privyConnectedAddress — once set, this never re-fires.
   useEffect(() => {
-    if (lookupMode !== "privy" || !privyEmbeddedAddress || privyConnectedAddress) return;
+    if (
+      lookupMode !== "privy" ||
+      !privyEmbeddedAddress ||
+      privyConnectedAddress
+    )
+      return;
     const addr = ethers.getAddress(privyEmbeddedAddress);
     setPrivyConnectedAddress(addr);
     loadAgentsByOwner(addr);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [privyEmbeddedAddress]);
 
   const handleConnect = async () => {
@@ -658,9 +677,14 @@ export default function MyAgentsPage() {
               )}
             </Button>
             <p className="text-xs text-subtle text-center max-w-xs">
-              Sign in with email, Google, or Twitter to find agents owned by your Privy embedded wallet.
+              Sign in with email, Google, or Twitter to find agents owned by
+              your Privy embedded wallet.
             </p>
-            {error && <p className="text-sm text-accent-error text-center max-w-xs">{error}</p>}
+            {error && (
+              <p className="text-sm text-accent-error text-center max-w-xs">
+                {error}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -668,7 +692,8 @@ export default function MyAgentsPage() {
               <p className="text-sm text-muted">
                 Privy Wallet:{" "}
                 <span className="font-mono text-foreground">
-                  {privyConnectedAddress.slice(0, 6)}...{privyConnectedAddress.slice(-4)}
+                  {privyConnectedAddress.slice(0, 6)}...
+                  {privyConnectedAddress.slice(-4)}
                 </span>
               </p>
               <button
@@ -677,7 +702,10 @@ export default function MyAgentsPage() {
                 className="p-2 text-muted hover:text-foreground hover:bg-surface-2 rounded-lg transition-colors disabled:opacity-50"
                 title="Refresh"
               >
-                <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+                <RefreshCw
+                  size={16}
+                  className={loading ? "animate-spin" : ""}
+                />
               </button>
             </div>
 
@@ -693,7 +721,9 @@ export default function MyAgentsPage() {
             {!loading && agents.length === 0 && (
               <Card className="text-center py-8">
                 <Cpu size={32} className="text-muted mx-auto mb-3" />
-                <p className="text-muted mb-4">No agents found for this Privy wallet.</p>
+                <p className="text-muted mb-4">
+                  No agents found for this Privy wallet.
+                </p>
                 <Link href="/agents/register">
                   <Button variant="primary">Register an Agent</Button>
                 </Link>
@@ -980,18 +1010,19 @@ function renderAgentCards(
             <p className="font-mono text-sm break-all">{agent.agentAddress}</p>
           </div>
 
-          {agent.credentials && buildDisclosureBadges(agent.credentials).length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {buildDisclosureBadges(agent.credentials).map((badge, i) => (
-                <span
-                  key={i}
-                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/10 text-accent border border-accent/20"
-                >
-                  {badge}
-                </span>
-              ))}
-            </div>
-          )}
+          {agent.credentials &&
+            buildDisclosureBadges(agent.credentials).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {buildDisclosureBadges(agent.credentials).map((badge, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/10 text-accent border border-accent/20"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            )}
 
           <div className="flex items-center gap-3 mt-2">
             {agent.guardian !== ethers.ZeroAddress && (

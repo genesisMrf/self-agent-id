@@ -850,9 +850,11 @@ async function runServiceTest(
                 {stats.totalAgents} agents
               </span>
             </p>
-            {(stats.topCountries?.filter((c: { country: string }) =>
-              c.country?.trim(),
-            ) ?? []).length > 0 && (
+            {(
+              stats.topCountries?.filter((c: { country: string }) =>
+                c.country?.trim(),
+              ) ?? []
+            ).length > 0 && (
               <p className="text-muted">
                 Top countries:{" "}
                 <span className="text-foreground">
@@ -1237,7 +1239,9 @@ async function runGateTest(
       eip712Signer = new ethers.Wallet(privateKey);
       log(id, "Signing EIP-712 with agent key (secp256k1)...");
     } else if (window.ethereum) {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
+      const browserProvider = new ethers.BrowserProvider(
+        window.ethereum as unknown as ethers.Eip1193Provider,
+      );
       const signer = await browserProvider.getSigner();
       eip712Signer = signer as ethers.Signer & {
         signTypedData: typeof ethers.Wallet.prototype.signTypedData;
@@ -1457,7 +1461,12 @@ export default function DemoPage() {
   const [walletError, setWalletError] = useState("");
   const [socialLoading, setSocialLoading] = useState(false);
 
-  const { login: privyLogin, ready: privyReady, authenticated: privyAuthenticated, wallets: privyWallets } = usePrivyState();
+  const {
+    login: privyLogin,
+    ready: privyReady,
+    authenticated: privyAuthenticated,
+    wallets: privyWallets,
+  } = usePrivyState();
 
   // Unique session ID — regenerated on every page load so the AI treats
   // each visit as a fresh encounter with no memory of prior sessions.
@@ -1859,7 +1868,9 @@ export default function DemoPage() {
           "No wallet detected. Install MetaMask or another browser wallet.",
         );
       }
-      const provider = new ethers.BrowserProvider(window.ethereum as unknown as ethers.Eip1193Provider);
+      const provider = new ethers.BrowserProvider(
+        window.ethereum as unknown as ethers.Eip1193Provider,
+      );
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
 
@@ -1905,7 +1916,7 @@ export default function DemoPage() {
         };
         if (creds.nationality || creds.olderThan > 0n) credentials = creds;
       } catch {
-        console.error("Error fetching Agent credentials")
+        console.error("Error fetching Agent credentials");
       }
 
       dispatch({

@@ -228,9 +228,23 @@ function resolveChainConfig(chainId?: number) {
   return { chainId: cid, config };
 }
 
+/** Derive the app's base URL from the incoming request or env. */
+function getAppBaseUrl(req?: NextRequest): string {
+  // Explicit env var takes priority
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  // Derive from request headers (works on Vercel preview deployments)
+  if (req) {
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    const host = req.headers.get("host");
+    if (host) return `${proto}://${host}`;
+  }
+  return "https://selfagentid.xyz";
+}
+
 async function handleRegister(
   intent: Extract<Intent, { type: "register" }>,
   taskId: string,
+  req?: NextRequest,
 ): Promise<Task> {
   if (!intent.humanAddress) {
     // Need human address — return input-required
@@ -262,7 +276,7 @@ async function handleRegister(
   }
 
   // Call the registration API internally
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://selfagentid.xyz";
+  const appUrl = getAppBaseUrl(req);
   try {
     const res = await fetch(`${appUrl}/api/agent/register`, {
       method: "POST",
@@ -385,8 +399,9 @@ async function handleRegisterStatus(
   sessionToken: string,
   taskId: string,
   originalTaskId?: string,
+  req?: NextRequest,
 ): Promise<Task> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://selfagentid.xyz";
+  const appUrl = getAppBaseUrl(req);
   try {
     const res = await fetch(`${appUrl}/api/agent/register/status`, {
       method: "GET",
@@ -863,10 +878,10 @@ const registryTaskHandler: TaskHandler = {
 
     switch (intent.type) {
       case "register":
-        task = await handleRegister(intent, taskId);
+        task = await handleRegister(intent, taskId, currentRequest);
         break;
       case "register-status":
-        task = await handleRegisterStatus(intent.sessionToken, taskId);
+        task = await handleRegisterStatus(intent.sessionToken, taskId, undefined, currentRequest);
         break;
       case "register-poll": {
         const storedToken = taskSessionStore.get(intent.taskId);
@@ -886,7 +901,7 @@ const registryTaskHandler: TaskHandler = {
             },
           };
         } else {
-          task = await handleRegisterStatus(storedToken, taskId, intent.taskId);
+          task = await handleRegisterStatus(storedToken, taskId, intent.taskId, currentRequest);
         }
         break;
       }
@@ -969,6 +984,11 @@ const registryTaskHandler: TaskHandler = {
   },
 };
 
+// ── Request-scoped context ───────────────────────────────────────────────────
+// The TaskHandler interface doesn't carry the HTTP request, so we store it
+// in a module-scoped variable for the duration of each request.
+let currentRequest: NextRequest | undefined;
+
 // ── A2A Server instance ─────────────────────────────────────────────────────
 
 const a2aServer = new A2AServer(registryTaskHandler);
@@ -1032,6 +1052,9 @@ export async function POST(req: NextRequest) {
       });
     }
   }
+
+  // Store request for handlers to derive base URL
+  currentRequest = req;
 
   let body: unknown;
   try {

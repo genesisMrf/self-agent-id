@@ -47,7 +47,7 @@ function registryCard(): ERC8004AgentDocument {
     },
     capabilities: {
       streaming: false,
-      pushNotifications: false,
+      pushNotifications: true,
       stateTransitionHistory: false,
       extendedAgentCard: false,
     },

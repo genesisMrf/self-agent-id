@@ -4,6 +4,7 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { ethers } from "ethers";
+import QRCode from "qrcode";
 import {
   A2AServer,
   A2AErrorCodes,
@@ -13,6 +14,7 @@ import {
   type Task,
   type Part,
   type JSONRPCResponse,
+  type TaskPushNotificationConfig,
 } from "@selfxyz/agent-sdk";
 import { typedRegistry, typedProvider } from "@/lib/contract-types";
 import { CHAIN_CONFIG } from "@/lib/chain-config";
@@ -30,6 +32,10 @@ const CORS_HEADERS = {
 // ── In-memory task store ────────────────────────────────────────────────────
 
 const taskStore = new Map<string, Task>();
+// Maps taskId → session token for automatic status polling
+const taskSessionStore = new Map<string, string>();
+// Maps taskId → push notification config for webhook delivery
+const taskPushConfigStore = new Map<string, TaskPushNotificationConfig>();
 let taskCounter = 0;
 
 function generateTaskId(): string {
@@ -37,11 +43,53 @@ function generateTaskId(): string {
   return `task-${Date.now()}-${taskCounter}`;
 }
 
+// ── QR code generation ──────────────────────────────────────────────────────
+
+async function generateQRBase64(data: string): Promise<string> {
+  return QRCode.toDataURL(data, {
+    width: 400,
+    margin: 2,
+    color: { dark: "#000000", light: "#ffffff" },
+    errorCorrectionLevel: "M",
+  });
+}
+
+// ── Push notification delivery ──────────────────────────────────────────────
+
+async function sendPushNotification(
+  config: TaskPushNotificationConfig,
+  task: Task,
+): Promise<void> {
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (config.token) {
+      headers["Authorization"] = `Bearer ${config.token}`;
+    }
+    if (config.authentication?.credentials) {
+      headers["Authorization"] = config.authentication.credentials;
+    }
+    await fetch(config.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        taskId: task.id,
+        status: task.status,
+        artifacts: task.artifacts,
+      }),
+    });
+  } catch {
+    // Push notification delivery is best-effort
+  }
+}
+
 // ── Intent detection ────────────────────────────────────────────────────────
 
 type Intent =
-  | { type: "register"; network: string; humanAddress?: string; mode?: string }
+  | { type: "register"; network: string; humanAddress?: string; mode?: string; pushConfig?: TaskPushNotificationConfig }
   | { type: "register-status"; sessionToken: string }
+  | { type: "register-poll"; taskId: string }
   | { type: "lookup"; agentId: number; chainId?: number }
   | { type: "verify"; agentId: number; chainId?: number }
   | { type: "help" }
@@ -74,13 +122,23 @@ function parseIntent(message: Message): Intent {
         network: (data.network as string) || "testnet",
         humanAddress: data.humanAddress as string | undefined,
         mode: (data.mode as string) || "agent-identity",
+        pushConfig: data.pushNotificationUrl
+          ? { url: data.pushNotificationUrl as string, token: data.pushNotificationToken as string | undefined }
+          : undefined,
       };
     }
     if (intent === "register-status" || intent === "status") {
-      return {
-        type: "register-status",
-        sessionToken: data.sessionToken as string,
-      };
+      // Support polling by taskId (auto-resolves session token)
+      if (data.taskId) {
+        return { type: "register-poll", taskId: data.taskId as string };
+      }
+      if (data.sessionToken) {
+        return {
+          type: "register-status",
+          sessionToken: data.sessionToken as string,
+        };
+      }
+      return { type: "unknown", text: "Please provide either a taskId or sessionToken to check status." };
     }
     if (intent === "lookup" || intent === "info") {
       return {
@@ -235,7 +293,35 @@ async function handleRegister(
       };
     }
 
-    // Return input-required with QR code deep link — human must scan
+    // Store session token for automatic task-based polling
+    taskSessionStore.set(taskId, result.sessionToken as string);
+
+    // Store push notification config if provided
+    if (intent.pushConfig) {
+      taskPushConfigStore.set(taskId, intent.pushConfig);
+    }
+
+    // Generate QR code image
+    const deepLink = result.deepLink as string;
+    let qrParts: Part[] = [];
+    try {
+      const qrDataUrl = await generateQRBase64(deepLink);
+      // Extract base64 from data URL (data:image/png;base64,...)
+      const base64 = qrDataUrl.split(",")[1];
+      qrParts = [
+        {
+          type: "file" as const,
+          file: {
+            name: "registration-qr.png",
+            mimeType: "image/png",
+            bytes: base64,
+          },
+        },
+      ];
+    } catch {
+      // QR generation failed — deep link is still available in data
+    }
+
     return {
       id: taskId,
       status: {
@@ -248,26 +334,30 @@ async function handleRegister(
               "",
               "Steps:",
               "1. Open the Self app on your phone",
-              "2. Scan the QR code or open the deep link below",
+              "2. Scan the QR code below (or open the deep link)",
               "3. Follow the prompts to scan your passport",
               "4. Wait for on-chain confirmation",
+            ),
+            ...qrParts,
+            ...textParts(
               "",
-              `Deep link: ${result.deepLink}`,
+              `Deep link: ${deepLink}`,
               "",
-              "Once the human has scanned, send a follow-up message to check status.",
-              "Include the session token from the data part below.",
+              `Session expires at: ${result.expiresAt} (${Math.round((result.timeRemainingMs as number) / 1000)}s remaining)`,
+              "",
+              "To check status, send one of:",
+              `  { "intent": "status", "taskId": "${taskId}" }`,
+              `  { "intent": "register-status", "sessionToken": "<token>" }`,
             ),
             dataPart({
+              taskId,
               sessionToken: result.sessionToken,
-              deepLink: result.deepLink,
+              deepLink,
               agentAddress: result.agentAddress,
               network: result.network,
               mode: result.mode,
               expiresAt: result.expiresAt,
-              instructions: [
-                "Display the deep link as a QR code for the human to scan",
-                "To poll status, send: { intent: 'register-status', sessionToken: '<token>' }",
-              ],
+              timeRemainingMs: result.timeRemainingMs,
             }),
           ],
         },
@@ -294,6 +384,7 @@ async function handleRegister(
 async function handleRegisterStatus(
   sessionToken: string,
   taskId: string,
+  originalTaskId?: string,
 ): Promise<Task> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://selfagentid.xyz";
   try {
@@ -305,15 +396,49 @@ async function handleRegisterStatus(
     const result = (await res.json()) as Record<string, unknown>;
 
     if (!res.ok) {
+      const errorMsg = (result.error as string) || "Unknown error";
+
+      // Detect expired sessions
+      if (res.status === 410 || errorMsg.toLowerCase().includes("expired")) {
+        // Clean up stores
+        if (originalTaskId) {
+          taskSessionStore.delete(originalTaskId);
+          taskPushConfigStore.delete(originalTaskId);
+        }
+        return {
+          id: taskId,
+          status: {
+            state: "failed",
+            message: {
+              role: "agent",
+              parts: [
+                ...textParts(
+                  "Registration session has expired (sessions last 10 minutes).",
+                  "Please start a new registration by sending:",
+                ),
+                dataPart({
+                  expired: true,
+                  hint: "Send a new register intent to restart",
+                  example: {
+                    intent: "register",
+                    humanAddress: "0x...",
+                    network: "testnet",
+                  },
+                }),
+              ],
+            },
+            timestamp: new Date().toISOString(),
+          },
+        };
+      }
+
       return {
         id: taskId,
         status: {
           state: "failed",
           message: {
             role: "agent",
-            parts: textParts(
-              `Status check failed: ${result.error || "Invalid or expired session"}`,
-            ),
+            parts: textParts(`Status check failed: ${errorMsg}`),
           },
           timestamp: new Date().toISOString(),
         },
@@ -322,8 +447,19 @@ async function handleRegisterStatus(
 
     const stage = result.stage as string;
 
+    // Update stored session token (tokens rotate on each poll)
+    if (result.sessionToken && originalTaskId) {
+      taskSessionStore.set(originalTaskId, result.sessionToken as string);
+    }
+
     if (stage === "completed") {
-      return {
+      // Clean up stores
+      if (originalTaskId) {
+        taskSessionStore.delete(originalTaskId);
+        taskPushConfigStore.delete(originalTaskId);
+      }
+
+      const completedTask: Task = {
         id: taskId,
         status: {
           state: "completed",
@@ -339,17 +475,31 @@ async function handleRegisterStatus(
                 agentId: result.agentId,
                 agentAddress: result.agentAddress,
                 credentials: result.credentials,
-                sessionToken: result.sessionToken,
               }),
             ],
           },
           timestamp: new Date().toISOString(),
         },
       };
+
+      // Send push notification if configured
+      const pushConfig = originalTaskId
+        ? taskPushConfigStore.get(originalTaskId)
+        : undefined;
+      if (pushConfig) {
+        await sendPushNotification(pushConfig, completedTask);
+      }
+
+      return completedTask;
     }
 
     if (stage === "failed") {
-      return {
+      if (originalTaskId) {
+        taskSessionStore.delete(originalTaskId);
+        taskPushConfigStore.delete(originalTaskId);
+      }
+
+      const failedTask: Task = {
         id: taskId,
         status: {
           state: "failed",
@@ -360,9 +510,23 @@ async function handleRegisterStatus(
           timestamp: new Date().toISOString(),
         },
       };
+
+      const pushConfig = originalTaskId
+        ? taskPushConfigStore.get(originalTaskId)
+        : undefined;
+      if (pushConfig) {
+        await sendPushNotification(pushConfig, failedTask);
+      }
+
+      return failedTask;
     }
 
     // Still in progress (qr-ready or proof-received)
+    const timeRemaining = result.timeRemainingMs as number;
+    const expiryWarning = timeRemaining < 120_000
+      ? `Warning: Session expires in ${Math.round(timeRemaining / 1000)}s. If it expires, you'll need to restart registration.`
+      : "";
+
     return {
       id: taskId,
       status: {
@@ -375,13 +539,15 @@ async function handleRegisterStatus(
               stage === "qr-ready"
                 ? "Waiting for the human to scan the QR code with the Self app."
                 : "Proof received, waiting for on-chain confirmation...",
-              "Send another status check in a few seconds.",
+              ...(expiryWarning ? [expiryWarning] : []),
+              "Poll again in 3-5 seconds.",
             ),
             dataPart({
               stage,
-              sessionToken: result.sessionToken,
+              taskId: originalTaskId || taskId,
               expiresAt: result.expiresAt,
-              timeRemainingMs: result.timeRemainingMs,
+              timeRemainingMs: timeRemaining,
+              pollHint: { intent: "status", taskId: originalTaskId || taskId },
             }),
           ],
         },
@@ -702,6 +868,28 @@ const registryTaskHandler: TaskHandler = {
       case "register-status":
         task = await handleRegisterStatus(intent.sessionToken, taskId);
         break;
+      case "register-poll": {
+        const storedToken = taskSessionStore.get(intent.taskId);
+        if (!storedToken) {
+          task = {
+            id: taskId,
+            status: {
+              state: "failed",
+              message: {
+                role: "agent",
+                parts: textParts(
+                  "No active registration found for that task ID. The session may have expired.",
+                  "Start a new registration with: { intent: 'register', humanAddress: '0x...', network: 'testnet' }",
+                ),
+              },
+              timestamp: new Date().toISOString(),
+            },
+          };
+        } else {
+          task = await handleRegisterStatus(storedToken, taskId, intent.taskId);
+        }
+        break;
+      }
       case "lookup":
         task = await handleLookup(intent.agentId, intent.chainId, taskId);
         break;

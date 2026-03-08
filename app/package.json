@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npx tsc -p ../typescript-sdk/tsconfig.build.json && next build",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest"

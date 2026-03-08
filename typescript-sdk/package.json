@@ -15,7 +15,6 @@
     "build": "tsc -p tsconfig.build.json",
     "build:all": "tsc",
     "test": "tsc && node --test dist/**/*.test.js",
-    "prepare": "tsc -p tsconfig.build.json",
     "prepublishOnly": "rm -rf dist && tsc -p tsconfig.build.json",
     "cli": "node dist/cli.js"
   },

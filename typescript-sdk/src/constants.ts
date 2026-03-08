@@ -71,8 +71,12 @@ export const REAUTH_BASE_URL = "https://self-agent-id.vercel.app";
 export const HEADERS = {
   /** Agent's Ethereum address (informational — identity is recovered from signature) */
   ADDRESS: "x-self-agent-address",
-  /** ECDSA signature over the request */
+  /** ECDSA or Ed25519 signature over the request */
   SIGNATURE: "x-self-agent-signature",
   /** Unix timestamp (milliseconds) for replay protection */
   TIMESTAMP: "x-self-agent-timestamp",
+  /** Key type: "ed25519" for Ed25519 agents; absent implies secp256k1 ECDSA */
+  KEYTYPE: "x-self-agent-keytype",
+  /** Agent's public key (used for Ed25519 agents) */
+  KEY: "x-self-agent-key",
 } as const;

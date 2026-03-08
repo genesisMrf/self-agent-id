@@ -46,6 +46,8 @@ export async function POST(req: NextRequest) {
   // 1. Extract caller's signature headers
   const signature = req.headers.get(HEADERS.SIGNATURE);
   const timestamp = req.headers.get(HEADERS.TIMESTAMP);
+  const keytype = req.headers.get(HEADERS.KEYTYPE) ?? undefined;
+  const agentKeyHeader = req.headers.get(HEADERS.KEY) ?? undefined;
 
   if (!signature || !timestamp) {
     return NextResponse.json(
@@ -70,6 +72,8 @@ export async function POST(req: NextRequest) {
       method: "POST",
       url: req.url,
       body: body || undefined,
+      keytype,
+      agentKey: agentKeyHeader,
     });
 
     if (!verifyResult.valid) {

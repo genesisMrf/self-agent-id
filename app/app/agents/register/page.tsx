@@ -44,6 +44,14 @@ import { usePrivyState, isPrivyConfigured } from "@/lib/privy";
 
 import { typedRegistry } from "@/lib/contract-types";
 import { writeAgentCard as writeAgentCardShared } from "@/lib/writeAgentCard";
+import {
+  computeEd25519ChallengeHash,
+  computeExtKpub,
+  buildEd25519UserData,
+  isValidEd25519PubkeyHex,
+  base64ToHex,
+  deriveEd25519Address,
+} from "@/lib/ed25519";
 // Dynamic import to avoid SSR issues with Self QR SDK
 const SelfQRcodeWrapper = dynamic(
   () => import("@selfxyz/qrcode").then((mod) => mod.SelfQRcodeWrapper),
@@ -55,7 +63,8 @@ let SelfAppBuilderClass:
   | typeof import("@selfxyz/qrcode").SelfAppBuilder
   | null = null;
 
-type Mode = "simple" | "advanced" | "walletfree" | "smartwallet" | "privy";
+type Mode = "simple" | "advanced" | "walletfree" | "smartwallet" | "privy" | "ed25519";
+type AgentPath = "onchain" | "offchain" | null;
 type Step = "mode" | "connect" | "scan" | "success";
 
 /** Map disclosure choices → config index digit (0-5) for the contract's configIds array */
@@ -72,6 +81,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const { network } = useNetwork();
   const [mode, setMode] = useState<Mode>("advanced");
+  const [agentPath, setAgentPath] = useState<AgentPath>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [selfApp, setSelfApp] = useState<ReturnType<
     InstanceType<typeof import("@selfxyz/qrcode").SelfAppBuilder>["build"]
@@ -86,6 +96,13 @@ export default function RegisterPage() {
   );
   const [passkeySupported, setPasskeySupported] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  // Ed25519 mode state
+  const [ed25519PubkeyInput, setEd25519PubkeyInput] = useState("");
+  const [ed25519PubkeyHex, setEd25519PubkeyHex] = useState<string | null>(null);
+  const [ed25519SignatureInput, setEd25519SignatureInput] = useState("");
+  const [ed25519ChallengeHex, setEd25519ChallengeHex] = useState<string | null>(null);
+  const [ed25519Step, setEd25519Step] = useState<"pubkey" | "challenge" | "signature" | "scan">("pubkey");
 
   // Privy mode state
   const [privyWalletAddress, setPrivyWalletAddress] = useState<string | null>(
@@ -164,6 +181,28 @@ export default function RegisterPage() {
   // poll the contract to detect successful registration while on the scan step.
   useEffect(() => {
     if (step !== "scan") return;
+    // For Ed25519 mode, poll using the pubkey as agentKey
+    if (mode === "ed25519") {
+      if (!ed25519PubkeyHex) return;
+      const agentKey = "0x" + ed25519PubkeyHex.padStart(64, "0");
+      const interval = setInterval(() => {
+        void (async () => {
+          try {
+            const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+            const registry = typedRegistry(network.registryAddress, provider);
+            const isVerified = await registry.isVerifiedAgent(agentKey);
+            if (isVerified) {
+              console.log("[on-chain poll] Ed25519 agent registered, triggering success");
+              clearInterval(interval);
+              handleSuccess();
+            }
+          } catch (err) {
+            console.warn("[on-chain poll] Ed25519 check failed:", err);
+          }
+        })();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
 
     const addressToCheck =
       mode === "simple" ? walletAddress : agentWallet?.address;
@@ -276,6 +315,103 @@ export default function RegisterPage() {
     const sig = ethers.Signature.from(signature);
 
     return sig;
+  };
+
+  // --- Ed25519 handler functions ---
+
+  const handleEd25519ValidateKey = async () => {
+    setErrorMessage("");
+    let hex = ed25519PubkeyInput.trim();
+
+    // Try base64 if not valid hex
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+      try {
+        hex = base64ToHex(hex);
+      } catch {
+        setErrorMessage("Invalid key. Paste 64 hex chars or 44-char base64.");
+        return;
+      }
+    }
+
+    if (!isValidEd25519PubkeyHex(hex)) {
+      setErrorMessage("Invalid Ed25519 public key — not a valid curve point.");
+      return;
+    }
+
+    setEd25519PubkeyHex(hex);
+
+    // Fetch nonce from contract
+    try {
+      const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+      const registry = typedRegistry(network.registryAddress, provider);
+      const pubkeyBytes32 = "0x" + hex.padStart(64, "0");
+      const nonce: bigint = await registry.ed25519Nonce(pubkeyBytes32);
+
+      // The humanAddress is unknown at this point — it comes from the ZK proof.
+      // Use address(0) as placeholder; the contract derives humanAddress from output.userIdentifier.
+      // Actually, for the challenge, we need to use the same address the contract will see.
+      // In the Ed25519 flow, the userId passed to Self app becomes the humanAddress.
+      // We use the derived address as the userId.
+      const derivedAddr = deriveEd25519Address(hex);
+
+      const challengeHash = computeEd25519ChallengeHash({
+        humanAddress: derivedAddr,
+        chainId: BigInt(network.chainId),
+        registryAddress: network.registryAddress,
+        nonce,
+      });
+
+      setEd25519ChallengeHex(challengeHash);
+      setEd25519Step("challenge");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`Failed to fetch nonce: ${msg}`);
+    }
+  };
+
+  const handleEd25519SubmitSignature = async () => {
+    setErrorMessage("");
+    const sigHex = ed25519SignatureInput.trim().replace(/^0x/, "");
+
+    if (!/^[0-9a-fA-F]{128}$/.test(sigHex)) {
+      setErrorMessage("Invalid signature. Must be 128 hex characters (64 bytes).");
+      return;
+    }
+
+    if (!ed25519PubkeyHex) return;
+
+    try {
+      setLoading(true);
+
+      // Compute extKpub (this is computationally intensive)
+      const extKpub = computeExtKpub(ed25519PubkeyHex);
+
+      // Build userData
+      const cfgIdx = getConfigIndex(disclosures);
+      const userData = buildEd25519UserData({
+        configIndex: parseInt(cfgIdx),
+        ed25519Pubkey: ed25519PubkeyHex,
+        signature: sigHex,
+        extKpub,
+        guardian: undefined, // No guardian for basic Ed25519 flow
+      });
+
+      if (!SelfAppBuilderClass) {
+        setErrorMessage("Self SDK still loading. Please try again.");
+        return;
+      }
+
+      // Use derived address as userId
+      const derivedAddr = deriveEd25519Address(ed25519PubkeyHex);
+      setSelfApp(buildSelfApp(derivedAddr.toLowerCase(), userData));
+      setEd25519Step("scan");
+      setStep("scan");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMessage(`Failed to build registration data: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConnect = async () => {
@@ -586,125 +722,297 @@ export default function RegisterPage() {
       {/* Step 1: Choose mode */}
       {step === "mode" && (
         <div className="flex flex-col items-center gap-6 w-full">
-          <p className="text-muted text-center max-w-md">
-            Choose how you want to register on-chain: wallet identity for direct
-            human use, or a dedicated agent identity for autonomous software.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-            {/* Advanced mode card — recommended, shown first */}
-            <button
-              onClick={() => setMode("advanced")}
-              className={`text-left p-5 rounded-xl border-2 transition-all ${
-                mode === "advanced"
-                  ? "border-accent bg-surface-2"
-                  : "border-border hover:border-border-strong"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-                  <Key size={16} className="text-accent" />
-                </span>
-                <span className="font-bold text-sm">Agent Identity</span>
-              </div>
-              <Badge variant="success">recommended</Badge>
-              <p className="text-xs text-muted mt-2">
-                Agent gets its own independent keypair. Your wallet key stays
-                safe.
+          {/* Level 1: Path selection (onchain vs offchain) */}
+          {agentPath === null && (
+            <>
+              <p className="text-muted text-center max-w-md">
+                What kind of agent are you registering?
               </p>
-            </button>
 
-            {/* Simple mode card */}
-            <button
-              onClick={() => setMode("simple")}
-              className={`text-left p-5 rounded-xl border-2 transition-all ${
-                mode === "simple"
-                  ? "border-accent bg-surface-2"
-                  : "border-border hover:border-border-strong"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-                  <Wallet size={16} className="text-accent" />
-                </span>
-                <span className="font-bold text-sm">Verified Wallet</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                <button
+                  onClick={() => setAgentPath("onchain")}
+                  className="text-left p-5 rounded-xl border-2 border-border hover:border-accent transition-all"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Wallet size={16} className="text-accent" />
+                    </span>
+                    <span className="font-bold text-sm">My agent is onchain</span>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    Your agent has an EVM wallet (MetaMask, passkey, social
+                    login). Register with your existing wallet or generate a
+                    dedicated agent key.
+                  </p>
+                </button>
+
+                <button
+                  onClick={() => { setAgentPath("offchain"); setMode("ed25519"); }}
+                  className="text-left p-5 rounded-xl border-2 border-border hover:border-accent transition-all"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Terminal size={16} className="text-accent" />
+                    </span>
+                    <span className="font-bold text-sm">My agent is not onchain</span>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    Your agent uses Ed25519 keys (OpenClaw, Eliza, etc.). Paste
+                    your existing public key — no wallet needed.
+                  </p>
+                </button>
               </div>
-              <p className="text-xs text-muted mt-2">
-                Your wallet address is the verified identity. Best for
-                human-operated, on-chain actions.
-              </p>
-            </button>
+            </>
+          )}
 
-            {/* Wallet-free mode card */}
-            <button
-              onClick={() => setMode("walletfree")}
-              className={`text-left p-5 rounded-xl border-2 transition-all ${
-                mode === "walletfree"
-                  ? "border-accent bg-surface-2"
-                  : "border-border hover:border-border-strong"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-                  <Smartphone size={16} className="text-accent" />
-                </span>
-                <span className="font-bold text-sm">No Wallet</span>
-              </div>
-              <p className="text-xs text-muted mt-2">
-                No crypto wallet needed. Just your passport and the Self app.
-              </p>
-            </button>
-
-            {/* Smart Wallet mode card */}
-            <button
-              onClick={() => passkeySupported && setMode("smartwallet")}
-              className={`text-left p-5 rounded-xl border-2 transition-all ${
-                !passkeySupported
-                  ? "border-border opacity-50 cursor-not-allowed"
-                  : mode === "smartwallet"
-                    ? "border-accent-success bg-surface-2"
-                    : "border-border hover:border-border-strong"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
-                  <Fingerprint size={16} className="text-accent-success" />
-                </span>
-                <span className="font-bold text-sm">Smart Wallet</span>
-              </div>
-              <p className="text-xs text-muted mt-2">
-                {passkeySupported
-                  ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless on Celo mainnet."
-                  : "Passkeys not supported in this browser."}
-              </p>
-            </button>
-
-            {/* Privy (Social Login) mode card */}
-            {isPrivyConfigured() && (
+          {/* Level 2a: Onchain sub-modes */}
+          {agentPath === "onchain" && (
+            <>
               <button
-                onClick={() => setMode("privy")}
-                className={`text-left p-5 rounded-xl border-2 transition-all sm:col-span-2 ${
-                  mode === "privy"
-                    ? "border-purple-500 bg-surface-2"
-                    : "border-border hover:border-border-strong"
-                }`}
+                onClick={() => { setAgentPath(null); setMode("advanced"); }}
+                className="flex items-center gap-1 text-sm text-muted hover:text-foreground transition-colors self-start"
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <PrivyIcon size={20} />
-                  <span className="font-bold text-sm">
-                    Social Login (Privy)
-                  </span>
-                </div>
-                <p className="text-xs text-muted mt-2">
-                  Sign in with email, Google, or Twitter. No browser extension
-                  needed. Privy creates an embedded wallet for you.
-                </p>
+                <ChevronLeft size={16} />
+                Back
               </button>
-            )}
-          </div>
 
-          {/* Security explainer for selected mode */}
-          <Card className="w-full">
+              <p className="text-muted text-center max-w-md">
+                Choose how you want to register on-chain: wallet identity for direct
+                human use, or a dedicated agent identity for autonomous software.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                {/* Advanced mode card — recommended, shown first */}
+                <button
+                  onClick={() => setMode("advanced")}
+                  className={`text-left p-5 rounded-xl border-2 transition-all ${
+                    mode === "advanced"
+                      ? "border-accent bg-surface-2"
+                      : "border-border hover:border-border-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Key size={16} className="text-accent" />
+                    </span>
+                    <span className="font-bold text-sm">Agent Identity</span>
+                  </div>
+                  <Badge variant="success">recommended</Badge>
+                  <p className="text-xs text-muted mt-2">
+                    Agent gets its own independent keypair. Your wallet key stays
+                    safe.
+                  </p>
+                </button>
+
+                {/* Simple mode card */}
+                <button
+                  onClick={() => setMode("simple")}
+                  className={`text-left p-5 rounded-xl border-2 transition-all ${
+                    mode === "simple"
+                      ? "border-accent bg-surface-2"
+                      : "border-border hover:border-border-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Wallet size={16} className="text-accent" />
+                    </span>
+                    <span className="font-bold text-sm">Verified Wallet</span>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    Your wallet address is the verified identity. Best for
+                    human-operated, on-chain actions.
+                  </p>
+                </button>
+
+                {/* Wallet-free mode card */}
+                <button
+                  onClick={() => setMode("walletfree")}
+                  className={`text-left p-5 rounded-xl border-2 transition-all ${
+                    mode === "walletfree"
+                      ? "border-accent bg-surface-2"
+                      : "border-border hover:border-border-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Smartphone size={16} className="text-accent" />
+                    </span>
+                    <span className="font-bold text-sm">No Wallet</span>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    No crypto wallet needed. Just your passport and the Self app.
+                  </p>
+                </button>
+
+                {/* Smart Wallet mode card */}
+                <button
+                  onClick={() => passkeySupported && setMode("smartwallet")}
+                  className={`text-left p-5 rounded-xl border-2 transition-all ${
+                    !passkeySupported
+                      ? "border-border opacity-50 cursor-not-allowed"
+                      : mode === "smartwallet"
+                        ? "border-accent-success bg-surface-2"
+                        : "border-border hover:border-border-strong"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-8 h-8 rounded-full bg-accent-success/20 flex items-center justify-center">
+                      <Fingerprint size={16} className="text-accent-success" />
+                    </span>
+                    <span className="font-bold text-sm">Smart Wallet</span>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    {passkeySupported
+                      ? "Face ID or fingerprint. No MetaMask, no seed phrase. Gasless on Celo mainnet."
+                      : "Passkeys not supported in this browser."}
+                  </p>
+                </button>
+
+                {/* Privy (Social Login) mode card */}
+                {isPrivyConfigured() && (
+                  <button
+                    onClick={() => setMode("privy")}
+                    className={`text-left p-5 rounded-xl border-2 transition-all sm:col-span-2 ${
+                      mode === "privy"
+                        ? "border-purple-500 bg-surface-2"
+                        : "border-border hover:border-border-strong"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <PrivyIcon size={20} />
+                      <span className="font-bold text-sm">
+                        Social Login (Privy)
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted mt-2">
+                      Sign in with email, Google, or Twitter. No browser extension
+                      needed. Privy creates an embedded wallet for you.
+                    </p>
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Level 2b: Ed25519 (offchain) mode */}
+          {agentPath === "offchain" && (
+            <>
+              <button
+                onClick={() => { setAgentPath(null); setMode("advanced"); }}
+                className="flex items-center gap-1 text-sm text-muted hover:text-foreground transition-colors self-start"
+              >
+                <ChevronLeft size={16} />
+                Back
+              </button>
+
+              <Card className="w-full">
+                <div className="flex items-center gap-2 mb-3">
+                  <Terminal size={16} className="text-accent" />
+                  <p className="font-bold text-sm">Ed25519 Agent Registration</p>
+                </div>
+
+                {ed25519Step === "pubkey" && (
+                  <>
+                    <p className="text-sm text-muted mb-4">
+                      Paste your agent&apos;s existing Ed25519 public key. No EVM wallet needed.
+                    </p>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Your agent&apos;s Ed25519 public key
+                    </label>
+                    <input
+                      type="text"
+                      value={ed25519PubkeyInput}
+                      onChange={(e) => setEd25519PubkeyInput(e.target.value)}
+                      placeholder="Paste hex (64 chars) or base64 (44 chars)"
+                      className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-subtle focus:border-accent focus:outline-none"
+                    />
+                    <Button
+                      onClick={() => void handleEd25519ValidateKey()}
+                      variant="primary"
+                      size="lg"
+                      className="mt-4 w-full"
+                      disabled={!ed25519PubkeyInput.trim()}
+                    >
+                      <Key size={18} />
+                      Validate Key &amp; Get Challenge
+                    </Button>
+                  </>
+                )}
+
+                {ed25519Step === "challenge" && ed25519ChallengeHex && (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 size={14} className="text-accent-success" />
+                      <p className="text-sm text-accent-success">Key validated</p>
+                    </div>
+                    <p className="text-sm text-muted mb-3">
+                      Sign this challenge hash with your agent&apos;s Ed25519 private key, then paste the signature below.
+                    </p>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Challenge to sign (32 bytes)
+                    </label>
+                    <div className="flex items-center gap-2 mb-4">
+                      <code className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-xs font-mono break-all">
+                        {ed25519ChallengeHex}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(ed25519ChallengeHex, "challenge")}
+                        className="p-2 rounded-lg hover:bg-surface-2 transition-colors"
+                        title="Copy challenge"
+                      >
+                        {copiedField === "challenge" ? <Check size={16} className="text-accent-success" /> : <Copy size={16} className="text-muted" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted mb-3">
+                      Sign the raw 32 bytes (remove the 0x prefix) using your agent&apos;s Ed25519 private key.
+                      The signature should be 64 bytes (128 hex chars) in standard Ed25519 format (R || S).
+                    </p>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Ed25519 signature (128 hex chars)
+                    </label>
+                    <textarea
+                      value={ed25519SignatureInput}
+                      onChange={(e) => setEd25519SignatureInput(e.target.value)}
+                      placeholder="Paste 128-char hex signature (r + s)"
+                      rows={3}
+                      className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-subtle focus:border-accent focus:outline-none resize-none"
+                    />
+                    <Button
+                      onClick={() => void handleEd25519SubmitSignature()}
+                      variant="primary"
+                      size="lg"
+                      className="mt-4 w-full"
+                      disabled={!ed25519SignatureInput.trim() || loading}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />
+                          Computing...
+                        </>
+                      ) : (
+                        <>
+                          <Rocket size={18} />
+                          Submit Signature &amp; Scan Passport
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
+
+                {ed25519Step === "scan" && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={14} className="text-accent-success" />
+                    <p className="text-sm text-accent-success">Signature verified — scan your passport below.</p>
+                  </div>
+                )}
+              </Card>
+            </>
+          )}
+
+          {/* Security explainer for selected mode (shown when a path is selected) */}
+          {agentPath !== null && <Card className="w-full">
             <div className="flex items-center gap-2 mb-3">
               <Lock size={16} className="text-accent" />
               <p className="font-bold text-sm">
@@ -716,7 +1024,9 @@ export default function RegisterPage() {
                       ? "How Smart Wallet works"
                       : mode === "privy"
                         ? "How Social Login works"
-                        : "How No Wallet works"}
+                        : mode === "ed25519"
+                          ? "How Ed25519 Registration works"
+                          : "How No Wallet works"}
               </p>
             </div>
             {mode === "simple" ? (
@@ -843,6 +1153,28 @@ export default function RegisterPage() {
                   dependency at runtime.
                 </li>
               </ul>
+            ) : mode === "ed25519" ? (
+              <ul className="text-sm text-muted space-y-1.5 list-disc list-inside">
+                <li>
+                  Your agent already has an{" "}
+                  <strong className="text-foreground">Ed25519 keypair</strong>.
+                  Paste the 32-byte public key.
+                </li>
+                <li>
+                  Sign a registration challenge with your agent&apos;s private key
+                  (instructions provided).
+                </li>
+                <li>
+                  Scan your passport with the{" "}
+                  <strong className="text-foreground">Self app</strong>. The
+                  contract verifies both the ZK proof and your Ed25519 signature
+                  on-chain.
+                </li>
+                <li>
+                  Your agent&apos;s public key becomes the on-chain identity.{" "}
+                  <strong className="text-foreground">No EVM wallet needed.</strong>
+                </li>
+              </ul>
             ) : (
               <>
                 <ul className="text-sm text-muted space-y-1.5 list-disc list-inside">
@@ -940,10 +1272,10 @@ export default function RegisterPage() {
                 )}
               </>
             )}
-          </Card>
+          </Card>}
 
           {/* Disclosure toggles */}
-          <Card className="w-full">
+          {agentPath !== null && <Card className="w-full">
             <button
               type="button"
               onClick={() => setShowDisclosures((v) => !v)}
@@ -1040,9 +1372,9 @@ export default function RegisterPage() {
                 </div>
               </div>
             )}
-          </Card>
+          </Card>}
 
-          {mode === "walletfree" ? (
+          {agentPath === "onchain" && (mode === "walletfree" ? (
             <Button
               onClick={() => void handleWalletFreeStart()}
               variant="primary"
@@ -1106,7 +1438,7 @@ export default function RegisterPage() {
                   : "Continue: Connect Wallet for Agent Identity"}
               </Button>
             </div>
-          )}
+          ))}
 
           {/* CLI / Agent-guided registration */}
           <Card className="w-full border border-accent/30 bg-accent/5">

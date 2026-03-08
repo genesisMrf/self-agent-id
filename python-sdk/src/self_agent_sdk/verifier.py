@@ -8,6 +8,9 @@ from __future__ import annotations
 import time
 from web3 import Web3
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.exceptions import InvalidSignature
+
 from .constants import (
     NETWORKS, DEFAULT_NETWORK, REGISTRY_ABI, DEFAULT_MAX_AGE_MS,
     DEFAULT_CACHE_TTL_MS, ZERO_ADDRESS, NetworkName,
@@ -345,11 +348,15 @@ class SelfAgentVerifier:
     def verify(
         self, signature: str, timestamp: str,
         method: str, url: str, body: str | None = None,
+        *, keytype: str | None = None, agent_key_hex: str | None = None,
     ) -> VerificationResult:
         """Verify a signed agent request.
 
-        Performs: timestamp freshness, ECDSA recovery, on-chain status,
+        Performs: timestamp freshness, signature verification, on-chain status,
         provider check, sybil check, credential checks, and rate limiting.
+
+        For Ed25519 agents, pass ``keytype="ed25519"`` and ``agent_key_hex``
+        (the 0x-prefixed 32-byte public key).
         """
         empty = VerificationResult(
             valid=False, agent_address=ZERO_ADDRESS,
@@ -378,15 +385,46 @@ class SelfAgentVerifier:
         body_hash = compute_body_hash(body)
         message = compute_message(timestamp, method, url, body_hash)
 
-        # 3. Recover signer (cryptographic -- can't be faked)
-        try:
-            signer = recover_signer(message, signature)
-        except Exception:
-            return VerificationResult(
-                valid=False, agent_address=empty.agent_address,
-                agent_key=empty.agent_key, agent_id=0, agent_count=0,
-                error="Invalid signature",
-            )
+        if keytype == "ed25519":
+            # ── Ed25519 verification path ──
+            if not agent_key_hex:
+                return VerificationResult(
+                    valid=False, agent_address=empty.agent_address,
+                    agent_key=empty.agent_key, agent_id=0, agent_count=0,
+                    error="Missing agent key for Ed25519 verification",
+                )
+
+            try:
+                pubkey_bytes = bytes.fromhex(agent_key_hex.removeprefix("0x"))
+                pub = Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+                sig_bytes = bytes.fromhex(signature.removeprefix("0x"))
+                pub.verify(sig_bytes, message)
+            except (InvalidSignature, Exception):
+                return VerificationResult(
+                    valid=False, agent_address=empty.agent_address,
+                    agent_key=empty.agent_key, agent_id=0, agent_count=0,
+                    error="Invalid Ed25519 signature",
+                )
+
+            agent_key = pubkey_bytes
+            # Derive deterministic address from keccak256(pubkey)
+            h = Web3.keccak(pubkey_bytes)
+            signer = Web3.to_checksum_address("0x" + h[-20:].hex())
+        else:
+            # ── secp256k1 ECDSA verification path (unchanged) ──
+
+            # 3. Recover signer (cryptographic -- can't be faked)
+            try:
+                signer = recover_signer(message, signature)
+            except Exception:
+                return VerificationResult(
+                    valid=False, agent_address=empty.agent_address,
+                    agent_key=empty.agent_key, agent_id=0, agent_count=0,
+                    error="Invalid signature",
+                )
+
+            # 5. Derive agent key
+            agent_key = address_to_agent_key(signer)
 
         # 4. Replay cache check (after signature validity to avoid cache poisoning)
         if self._enable_replay_protection:
@@ -394,12 +432,9 @@ class SelfAgentVerifier:
             if replay_error is not None:
                 return VerificationResult(
                     valid=False, agent_address=signer,
-                    agent_key=address_to_agent_key(signer), agent_id=0, agent_count=0,
+                    agent_key=agent_key, agent_id=0, agent_count=0,
                     error=replay_error,
                 )
-
-        # 5. Derive agent key
-        agent_key = address_to_agent_key(signer)
 
         # 6. On-chain check (with cache)
         chain = self._check_on_chain(agent_key)

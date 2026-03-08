@@ -49,10 +49,14 @@ pub const DEFAULT_CACHE_TTL_MS: u64 = 60_000;
 pub mod headers {
     /// Agent's Ethereum address (informational — identity is recovered from signature).
     pub const ADDRESS: &str = "x-self-agent-address";
-    /// ECDSA signature over the request.
+    /// ECDSA or Ed25519 signature over the request.
     pub const SIGNATURE: &str = "x-self-agent-signature";
     /// Unix timestamp (milliseconds) for replay protection.
     pub const TIMESTAMP: &str = "x-self-agent-timestamp";
+    /// Key type: "ed25519" for Ed25519 agents; absent implies secp256k1 ECDSA.
+    pub const KEYTYPE: &str = "x-self-agent-keytype";
+    /// Agent's public key (used for Ed25519 agents).
+    pub const KEY: &str = "x-self-agent-key";
 }
 
 // Registry ABI — matches the TS SDK's REGISTRY_ABI exactly.

@@ -5,6 +5,9 @@
 export { SelfAgent } from "./SelfAgent";
 export type { SelfAgentConfig, AgentInfo } from "./SelfAgent";
 
+export { Ed25519Agent } from "./Ed25519Agent";
+export type { Ed25519AgentConfig } from "./Ed25519Agent";
+
 export {
   SelfAgentVerifier,
   VerifierBuilder,

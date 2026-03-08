@@ -13,6 +13,7 @@ use crate::constants::{
     network_config, IAgentRegistry, NetworkName, DEFAULT_CACHE_TTL_MS, DEFAULT_MAX_AGE_MS,
     DEFAULT_NETWORK,
 };
+use crate::ed25519_agent::derive_address_from_pubkey;
 
 // ---------------------------------------------------------------------------
 // Configuration structs
@@ -764,6 +765,347 @@ impl SelfAgentVerifier {
         }
 
         // 11. Rate limiting (per-agent, in-memory sliding window)
+        if let Some(ref mut limiter) = self.rate_limiter {
+            let addr_str = format!("{:#x}", signer_address);
+            if let Some(limited) = limiter.check(&addr_str) {
+                return VerificationResult {
+                    valid: false,
+                    agent_address: signer_address,
+                    agent_key,
+                    agent_id: on_chain.agent_id,
+                    agent_count: on_chain.agent_count,
+                    nullifier: on_chain.nullifier,
+                    credentials,
+                    error: Some(limited.error),
+                    retry_after_ms: Some(limited.retry_after_ms),
+                };
+            }
+        }
+
+        VerificationResult {
+            valid: true,
+            agent_address: signer_address,
+            agent_key,
+            agent_id: on_chain.agent_id,
+            agent_count: on_chain.agent_count,
+            nullifier: on_chain.nullifier,
+            credentials,
+            error: None,
+            retry_after_ms: None,
+        }
+    }
+
+    /// Verify a signed agent request with key type awareness.
+    ///
+    /// When `keytype` is `Some("ed25519")`, uses Ed25519 verification with the
+    /// provided `agent_key` (32-byte public key). Otherwise falls through to
+    /// standard ECDSA verification via [`verify`].
+    pub async fn verify_with_keytype(
+        &mut self,
+        signature: &str,
+        timestamp: &str,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        keytype: Option<&str>,
+        agent_key: Option<&str>,
+    ) -> VerificationResult {
+        if keytype == Some("ed25519") {
+            return self
+                .verify_ed25519(signature, timestamp, method, url, body, agent_key)
+                .await;
+        }
+
+        // Default: ECDSA verification
+        self.verify(signature, timestamp, method, url, body).await
+    }
+
+    /// Verify an Ed25519-signed agent request.
+    ///
+    /// The agent's public key must be provided in `agent_key_hex`. The signature
+    /// is verified directly against the Ed25519 public key (no EIP-191 prefix).
+    /// The agent address is derived from `keccak256(pubkey)`.
+    async fn verify_ed25519(
+        &mut self,
+        signature: &str,
+        timestamp: &str,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        agent_key_hex: Option<&str>,
+    ) -> VerificationResult {
+        // 1. Require agent key for Ed25519
+        let key_hex = match agent_key_hex {
+            Some(k) => k,
+            None => {
+                return VerificationResult::empty_with_error(
+                    "Missing agent key for Ed25519 verification",
+                );
+            }
+        };
+
+        // 2. Check timestamp freshness
+        let ts: u64 = match timestamp.parse() {
+            Ok(v) => v,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Timestamp expired or invalid");
+            }
+        };
+        let now = now_millis();
+        let diff = if now > ts { now - ts } else { ts - now };
+        if diff > self.max_age_ms {
+            return VerificationResult::empty_with_error("Timestamp expired or invalid");
+        }
+
+        // 3. Reconstruct the signed message
+        let message = compute_signing_message(timestamp, method, url, body);
+        let message_key = format!("{:#x}", message);
+
+        // 4. Parse the Ed25519 public key
+        let key_stripped = key_hex.strip_prefix("0x").unwrap_or(key_hex);
+        let key_bytes = match hex::decode(key_stripped) {
+            Ok(b) => b,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Invalid Ed25519 agent key");
+            }
+        };
+        let key_array: [u8; 32] = match key_bytes.try_into() {
+            Ok(a) => a,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Invalid Ed25519 agent key");
+            }
+        };
+        let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&key_array) {
+            Ok(vk) => vk,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Invalid Ed25519 agent key");
+            }
+        };
+
+        // 5. Parse and verify the signature
+        let sig_stripped = signature.strip_prefix("0x").unwrap_or(signature);
+        let sig_bytes = match hex::decode(sig_stripped) {
+            Ok(b) => b,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Invalid Ed25519 signature");
+            }
+        };
+        let sig_array: [u8; 64] = match sig_bytes.try_into() {
+            Ok(a) => a,
+            Err(_) => {
+                return VerificationResult::empty_with_error("Invalid Ed25519 signature");
+            }
+        };
+        let ed_signature = ed25519_dalek::Signature::from_bytes(&sig_array);
+
+        {
+            use ed25519_dalek::Verifier;
+            if verifying_key.verify(message.as_ref(), &ed_signature).is_err() {
+                return VerificationResult::empty_with_error("Invalid Ed25519 signature");
+            }
+        }
+
+        // 6. Derive address from keccak256(pubkey)
+        let signer_address = derive_address_from_pubkey(&key_array);
+
+        // Agent key for Ed25519 is the raw 32-byte public key (already bytes32)
+        let agent_key = B256::from(key_array);
+
+        // 7. Replay cache check
+        if self.enable_replay_protection {
+            if let Some(err) = self.check_and_record_replay(signature, &message_key, ts, now) {
+                return VerificationResult {
+                    valid: false,
+                    agent_address: signer_address,
+                    agent_key,
+                    agent_id: U256::ZERO,
+                    agent_count: U256::ZERO,
+                    nullifier: U256::ZERO,
+                    credentials: None,
+                    error: Some(err),
+                    retry_after_ms: None,
+                };
+            }
+        }
+
+        // 8+ Remaining checks (on-chain, provider, sybil, credentials, rate limit)
+        // are identical to the ECDSA path — delegate to shared logic.
+        self.verify_on_chain_and_policy(signer_address, agent_key)
+            .await
+    }
+
+    /// Shared on-chain + policy verification logic used by both ECDSA and Ed25519 paths.
+    async fn verify_on_chain_and_policy(
+        &mut self,
+        signer_address: Address,
+        agent_key: B256,
+    ) -> VerificationResult {
+        // Check on-chain status (with cache)
+        let on_chain = match self.check_on_chain(agent_key).await {
+            Ok(v) => v,
+            Err(e) => {
+                return VerificationResult {
+                    valid: false,
+                    agent_address: signer_address,
+                    agent_key,
+                    agent_id: U256::ZERO,
+                    agent_count: U256::ZERO,
+                    nullifier: U256::ZERO,
+                    credentials: None,
+                    error: Some(format!("RPC error: {}", e)),
+                    retry_after_ms: None,
+                };
+            }
+        };
+
+        if !on_chain.is_verified {
+            return VerificationResult {
+                valid: false,
+                agent_address: signer_address,
+                agent_key,
+                agent_id: on_chain.agent_id,
+                agent_count: on_chain.agent_count,
+                nullifier: on_chain.nullifier,
+                credentials: None,
+                error: Some("Agent not verified on-chain".to_string()),
+                retry_after_ms: None,
+            };
+        }
+
+        if !on_chain.is_proof_fresh {
+            return VerificationResult {
+                valid: false,
+                agent_address: signer_address,
+                agent_key,
+                agent_id: on_chain.agent_id,
+                agent_count: on_chain.agent_count,
+                nullifier: on_chain.nullifier,
+                credentials: None,
+                error: Some("Agent's human proof has expired".to_string()),
+                retry_after_ms: None,
+            };
+        }
+
+        // Provider check
+        if self.require_self_provider && on_chain.agent_id > U256::ZERO {
+            let self_provider = match self.get_self_provider_address().await {
+                Ok(addr) => addr,
+                Err(_) => {
+                    return VerificationResult {
+                        valid: false,
+                        agent_address: signer_address,
+                        agent_key,
+                        agent_id: on_chain.agent_id,
+                        agent_count: on_chain.agent_count,
+                        nullifier: on_chain.nullifier,
+                        credentials: None,
+                        error: Some(
+                            "Unable to verify proof provider — RPC error".to_string(),
+                        ),
+                        retry_after_ms: None,
+                    };
+                }
+            };
+            if on_chain.provider_address != self_provider {
+                return VerificationResult {
+                    valid: false,
+                    agent_address: signer_address,
+                    agent_key,
+                    agent_id: on_chain.agent_id,
+                    agent_count: on_chain.agent_count,
+                    nullifier: on_chain.nullifier,
+                    credentials: None,
+                    error: Some(
+                        "Agent was not verified by Self — proof provider mismatch".to_string(),
+                    ),
+                    retry_after_ms: None,
+                };
+            }
+        }
+
+        // Sybil resistance
+        if self.max_agents_per_human > 0
+            && on_chain.agent_count > U256::from(self.max_agents_per_human)
+        {
+            return VerificationResult {
+                valid: false,
+                agent_address: signer_address,
+                agent_key,
+                agent_id: on_chain.agent_id,
+                agent_count: on_chain.agent_count,
+                nullifier: on_chain.nullifier,
+                credentials: None,
+                error: Some(format!(
+                    "Human has {} agents (max {})",
+                    on_chain.agent_count, self.max_agents_per_human
+                )),
+                retry_after_ms: None,
+            };
+        }
+
+        // Fetch credentials if requested
+        let credentials = if self.include_credentials && on_chain.agent_id > U256::ZERO {
+            self.fetch_credentials(on_chain.agent_id).await.ok()
+        } else {
+            None
+        };
+
+        // Credential checks
+        if let Some(ref creds) = credentials {
+            if let Some(min_age) = self.minimum_age {
+                if creds.older_than < U256::from(min_age) {
+                    return VerificationResult {
+                        valid: false,
+                        agent_address: signer_address,
+                        agent_key,
+                        agent_id: on_chain.agent_id,
+                        agent_count: on_chain.agent_count,
+                        nullifier: on_chain.nullifier,
+                        credentials: credentials.clone(),
+                        error: Some(format!(
+                            "Agent's human does not meet minimum age (required: {}, got: {})",
+                            min_age, creds.older_than
+                        )),
+                        retry_after_ms: None,
+                    };
+                }
+            }
+
+            if self.require_ofac_passed && !creds.ofac.first().copied().unwrap_or(false) {
+                return VerificationResult {
+                    valid: false,
+                    agent_address: signer_address,
+                    agent_key,
+                    agent_id: on_chain.agent_id,
+                    agent_count: on_chain.agent_count,
+                    nullifier: on_chain.nullifier,
+                    credentials: credentials.clone(),
+                    error: Some("Agent's human did not pass OFAC screening".to_string()),
+                    retry_after_ms: None,
+                };
+            }
+
+            if let Some(ref allowed) = self.allowed_nationalities {
+                if !allowed.is_empty() && !allowed.contains(&creds.nationality) {
+                    return VerificationResult {
+                        valid: false,
+                        agent_address: signer_address,
+                        agent_key,
+                        agent_id: on_chain.agent_id,
+                        agent_count: on_chain.agent_count,
+                        nullifier: on_chain.nullifier,
+                        credentials: credentials.clone(),
+                        error: Some(format!(
+                            "Nationality \"{}\" not in allowed list",
+                            creds.nationality
+                        )),
+                        retry_after_ms: None,
+                    };
+                }
+            }
+        }
+
+        // Rate limiting
         if let Some(ref mut limiter) = self.rate_limiter {
             let addr_str = format!("{:#x}", signer_address);
             if let Some(limited) = limiter.check(&addr_str) {

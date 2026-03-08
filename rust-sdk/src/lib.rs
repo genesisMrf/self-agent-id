@@ -56,6 +56,7 @@
 pub mod agent;
 pub mod agent_card;
 pub mod constants;
+pub mod ed25519_agent;
 pub mod registration;
 pub mod registration_flow;
 pub mod verifier;
@@ -70,6 +71,7 @@ pub use agent_card::{
     get_provider_label, get_strength_color,
 };
 pub use constants::{headers, NetworkName};
+pub use ed25519_agent::{Ed25519Agent, Ed25519AgentConfig};
 pub use registration::{
     RegistrationDisclosures, SignatureParts, SignedRegistrationChallenge,
     build_advanced_deregister_user_data_ascii, build_advanced_register_user_data_ascii,

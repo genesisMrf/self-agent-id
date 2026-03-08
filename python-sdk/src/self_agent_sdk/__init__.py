@@ -3,6 +3,7 @@
 # NOTE: Converts to Apache-2.0 on 2029-06-11 per LICENSE.
 
 from .agent import SelfAgent
+from .ed25519_agent import Ed25519Agent
 from .verifier import SelfAgentVerifier, VerifierBuilder, RateLimiter
 from .constants import HEADERS, NETWORKS, DEFAULT_NETWORK, REGISTRY_ABI, PROVIDER_ABI
 from .types import (
@@ -32,7 +33,7 @@ from .registration_flow import (
 )
 
 __all__ = [
-    "SelfAgent", "SelfAgentVerifier", "VerifierBuilder", "RateLimiter",
+    "SelfAgent", "Ed25519Agent", "SelfAgentVerifier", "VerifierBuilder", "RateLimiter",
     "HEADERS", "NETWORKS", "DEFAULT_NETWORK", "REGISTRY_ABI", "PROVIDER_ABI",
     "AgentInfo", "VerificationResult", "AgentCredentials",
     "A2AAgentCard", "SelfProtocolExtension", "TrustModel", "CardCredentials", "AgentSkill",

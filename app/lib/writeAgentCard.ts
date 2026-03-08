@@ -26,13 +26,18 @@ export async function writeAgentCard(
   const provider = signer.provider!;
   const registryRead = typedRegistry(registryAddress, provider);
 
-  // Read provider strength
+  // Read provider strength (may fail on older contract versions)
   let verificationStrength: number | null = null;
-  const providerAddr: string = await registryRead.agentProofProvider(agentId);
-  if (providerAddr && providerAddr !== ethers.ZeroAddress) {
-    const prov = typedProvider(providerAddr, provider);
-    const strength: number = await prov.verificationStrength();
-    verificationStrength = Number(strength);
+  let providerAddr = ethers.ZeroAddress;
+  try {
+    providerAddr = await registryRead.agentProofProvider(agentId);
+    if (providerAddr && providerAddr !== ethers.ZeroAddress) {
+      const prov = typedProvider(providerAddr, provider);
+      const strength: number = await prov.verificationStrength();
+      verificationStrength = Number(strength);
+    }
+  } catch {
+    /* agentProofProvider not available for this agent */
   }
 
   // Read credentials for card

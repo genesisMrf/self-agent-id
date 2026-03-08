@@ -42,6 +42,8 @@ HEADERS = {
     "ADDRESS": "x-self-agent-address",
     "SIGNATURE": "x-self-agent-signature",
     "TIMESTAMP": "x-self-agent-timestamp",
+    "KEYTYPE": "x-self-agent-keytype",
+    "KEY": "x-self-agent-key",
 }
 
 # JSON ABI for web3.py — mirrors sdk/src/constants.ts REGISTRY_ABI

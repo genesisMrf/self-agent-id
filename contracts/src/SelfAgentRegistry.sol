@@ -17,6 +17,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IHumanProofProvider } from "./interfaces/IHumanProofProvider.sol";
 import { ImplRoot } from "./upgradeable/ImplRoot.sol";
 import { AccessControlUpgradeable } from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import { Ed25519Verifier } from "./lib/Ed25519Verifier.sol";
 
 /**
  * @title SelfAgentRegistry
@@ -80,6 +81,8 @@ contract SelfAgentRegistry is
     uint8 constant ACTION_DEREGISTER_ADVANCED = 0x58;
     /// @dev Action byte for wallet-free registration with guardian ('W' = 0x57)
     uint8 constant ACTION_REGISTER_WALLETFREE = 0x57;
+    /// @dev Action byte for Ed25519 agent registration ('E' = 0x45)
+    uint8 constant ACTION_REGISTER_ED25519 = 0x45;
 
     /// @notice Number of verification configs (age × OFAC combos)
     uint8 public constant NUM_CONFIGS = 6;
@@ -136,6 +139,8 @@ contract SelfAgentRegistry is
         uint256 nextAgentId;
         mapping(uint256 => uint256) proofExpiresAt;
         mapping(uint256 => uint256) walletSetNonces;
+        /// @dev Nonces for Ed25519 agent challenge signing, keyed by keccak256(ed25519Pubkey)
+        mapping(bytes32 => uint256) ed25519Nonces;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("self.storage.SelfAgentRegistry")) - 1)) & ~bytes32(uint256(0xff))
@@ -300,6 +305,10 @@ contract SelfAgentRegistry is
     function agentMetadata(uint256 id) external view returns (string memory) { return _getSelfAgentRegistryStorage().agentMetadata[id]; }
     /// @notice Returns the current nonce for the given agent address (replay protection)
     function agentNonces(address a) external view returns (uint256) { return _getSelfAgentRegistryStorage().agentNonces[a]; }
+    /// @notice Get the Ed25519 registration nonce for a given public key
+    function ed25519Nonce(bytes32 pubkey) external view returns (uint256) {
+        return _getSelfAgentRegistryStorage().ed25519Nonces[pubkey];
+    }
     /// @notice Returns the maximum number of agents a single human can register (0 = unlimited)
     function maxAgentsPerHuman() external view returns (uint256) { return _getSelfAgentRegistryStorage().maxAgentsPerHuman; }
     /// @notice Returns the maximum age (seconds) of a human proof before reauthentication is required
@@ -458,6 +467,8 @@ contract SelfAgentRegistry is
             uint8 v = _hexStringToUint8(userData, 210);
             bytes32 agentKey = _verifyAgentSignature(agentAddr, humanAddress, v, r, s);
             _registerAgentWalletFree(nullifier, agentKey, agentAddr, guardian, output);
+        } else if (actionByte == ACTION_REGISTER_ED25519) {
+            _handleEd25519Registration(nullifier, humanAddress, userData, output);
         } else {
             revert InvalidAction(actionByte);
         }
@@ -827,6 +838,49 @@ contract SelfAgentRegistry is
         }
     }
 
+    /// @dev Parse Ed25519 userData fields, verify signature, and register — extracted to avoid stack-too-deep
+    function _handleEd25519Registration(
+        uint256 nullifier,
+        address humanAddress,
+        bytes memory userData,
+        ISelfVerificationRoot.GenericDiscloseOutputV2 memory output
+    ) internal {
+        if (userData.length < 554) revert InvalidUserData();
+        bytes32 ed25519Pubkey = _hexStringToBytes32(userData, 2);
+        bytes32 sigR = _hexStringToBytes32(userData, 66);
+        bytes32 sigS = _hexStringToBytes32(userData, 130);
+        uint256[5] memory extKpub;
+        extKpub[0] = uint256(_hexStringToBytes32(userData, 194));
+        extKpub[1] = uint256(_hexStringToBytes32(userData, 258));
+        extKpub[2] = uint256(_hexStringToBytes32(userData, 322));
+        extKpub[3] = uint256(_hexStringToBytes32(userData, 386));
+        extKpub[4] = uint256(_hexStringToBytes32(userData, 450));
+        address guardian = _hexStringToAddress(userData, 514);
+
+        bytes32 agentKey = _verifyEd25519Signature(ed25519Pubkey, sigR, sigS, extKpub, humanAddress);
+        address derivedAddr = Ed25519Verifier.deriveAddress(ed25519Pubkey);
+        _registerAgentEd25519(nullifier, agentKey, derivedAddr, guardian, output);
+    }
+
+    /// @notice Register an Ed25519 agent (NFT minted to derived address, optional guardian)
+    function _registerAgentEd25519(
+        uint256 nullifier,
+        bytes32 agentKey,
+        address derivedAddr,
+        address guardian,
+        ISelfVerificationRoot.GenericDiscloseOutputV2 memory output
+    ) internal {
+        SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
+        address provider = $.selfProofProvider;
+        uint256 agentId = _mintAgent(nullifier, agentKey, provider, derivedAddr, "", output.attestationId);
+        _storeCredentials(agentId, output);
+
+        if (guardian != address(0)) {
+            $.agentGuardian[agentId] = guardian;
+            emit GuardianSet(agentId, guardian);
+        }
+    }
+
     /// @notice Deregister an agent through the Hub V2 callback flow
     function _deregisterAgent(uint256 nullifier, bytes32 agentKey) internal {
         SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
@@ -917,6 +971,39 @@ contract SelfAgentRegistry is
         if (recovered != agentAddress) revert InvalidAgentSignature();
         $.agentNonces[agentAddress] = nonce + 1;
         return bytes32(uint256(uint160(agentAddress)));
+    }
+
+    /// @dev Verify an Ed25519 challenge signature from the agent, increment nonce, return agentKey
+    function _verifyEd25519Signature(
+        bytes32 ed25519Pubkey,
+        bytes32 sigR,
+        bytes32 sigS,
+        uint256[5] memory extKpub,
+        address humanAddress
+    ) internal returns (bytes32 agentKey) {
+        SelfAgentRegistryStorage storage $ = _getSelfAgentRegistryStorage();
+        uint256 nonce = $.ed25519Nonces[ed25519Pubkey];
+
+        // Reconstruct challenge message
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            "self-agent-id:register-ed25519:",
+            humanAddress,
+            block.chainid,
+            address(this),
+            nonce
+        ));
+
+        // Verify Ed25519 signature over the challenge hash
+        bool valid = Ed25519Verifier.verify(
+            string(abi.encodePacked(messageHash)),
+            uint256(sigR),
+            uint256(sigS),
+            extKpub
+        );
+        if (!valid) revert InvalidAgentSignature();
+
+        $.ed25519Nonces[ed25519Pubkey] = nonce + 1;
+        return ed25519Pubkey; // The raw Ed25519 pubkey IS the agentKey
     }
 
     // ====================================================

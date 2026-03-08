@@ -43,6 +43,8 @@ export const REGISTRY_ABI = [
   "function getAgentCredentials(uint256 agentId) view returns ((string issuingState, string[] name, string idNumber, string nationality, string dateOfBirth, string gender, string expiryDate, uint256 olderThan, bool[3] ofac))",
   // V5: per-agent nonce for replay-attack prevention on advanced/wallet-free registration
   "function agentNonces(address agent) view returns (uint256)",
+  // Ed25519 registration nonce
+  "function ed25519Nonce(bytes32 pubkey) view returns (uint256)",
   // Standard interface aliases (match SDK REGISTRY_ABI naming)
   "function getProofProvider(uint256 agentId) view returns (address)",
   "function selfProofProvider() view returns (address)",
@@ -67,6 +69,24 @@ export const AGENT_DEMO_VERIFIER_ABI = [
   "function nonces(bytes32 agentKey) view returns (uint256)",
   "function totalVerifications() view returns (uint256)",
   "function DOMAIN_SEPARATOR() view returns (bytes32)",
+  "function registry() view returns (address)",
+  "error NotVerifiedAgent()",
+  "error MetaTxExpired()",
+  "error MetaTxInvalidNonce()",
+  "error MetaTxInvalidSignature()",
+  "event AgentChainVerified(bytes32 indexed agentKey, uint256 indexed agentId)",
+  "event VerificationCompleted(bytes32 indexed agentKey, uint256 agentCount, uint256 totalCount)",
+  "event GasSponsored(address indexed relayer, bytes32 indexed agentKey)",
+] as const;
+
+// AgentDemoVerifierEd25519 — Ed25519 meta-tx contract (parallel to ECDSA version)
+export const AGENT_DEMO_VERIFIER_ED25519_ABI = [
+  "function metaVerifyAgent(bytes32 agentKey, uint256 nonce, uint256 deadline, uint256[5] extKpub, uint256 sigR, uint256 sigS) returns (uint256 agentId)",
+  "function checkAccess(bytes32 agentKey) view returns (uint256 agentId)",
+  "function hasVerified(bytes32 agentKey) view returns (bool)",
+  "function verificationCount(bytes32 agentKey) view returns (uint256)",
+  "function nonces(bytes32 agentKey) view returns (uint256)",
+  "function totalVerifications() view returns (uint256)",
   "function registry() view returns (address)",
   "error NotVerifiedAgent()",
   "error MetaTxExpired()",

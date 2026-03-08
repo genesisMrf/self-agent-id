@@ -37,6 +37,8 @@ export async function POST(req: NextRequest) {
 
   const signature = req.headers.get(HEADERS.SIGNATURE);
   const timestamp = req.headers.get(HEADERS.TIMESTAMP);
+  const keytype = req.headers.get(HEADERS.KEYTYPE) ?? undefined;
+  const agentKeyHeader = req.headers.get(HEADERS.KEY) ?? undefined;
   let agentAddress = "anonymous";
 
   // Signed requests are cryptographically verified.
@@ -61,6 +63,8 @@ export async function POST(req: NextRequest) {
       method: "POST",
       url: req.url,
       body: body || undefined,
+      keytype,
+      agentKey: agentKeyHeader,
     });
 
     if (!result.valid) {

@@ -47,6 +47,8 @@ function createVerifier(req: NextRequest) {
 async function verifyAgent(req: NextRequest, body: string) {
   const signature = req.headers.get(HEADERS.SIGNATURE);
   const timestamp = req.headers.get(HEADERS.TIMESTAMP);
+  const keytype = req.headers.get(HEADERS.KEYTYPE) ?? undefined;
+  const agentKey = req.headers.get(HEADERS.KEY) ?? undefined;
 
   if (!signature || !timestamp) {
     return {
@@ -62,6 +64,8 @@ async function verifyAgent(req: NextRequest, body: string) {
     method: req.method,
     url: req.url,
     body: body || undefined,
+    keytype,
+    agentKey,
   });
 
   if (!result.valid) return result;

@@ -31,10 +31,9 @@ import {
   Bot,
   Send,
 } from "lucide-react";
-import { SelfAgent } from "@selfxyz/agent-sdk/dist/SelfAgent";
-import { HEADERS } from "@selfxyz/agent-sdk/dist/constants";
-import type { Ed25519Agent } from "@selfxyz/agent-sdk/dist/Ed25519Agent";
-import type { SelfAgentVerifier } from "@selfxyz/agent-sdk/dist/SelfAgentVerifier";
+import { SelfAgent, HEADERS } from "@selfxyz/agent-sdk";
+import type { Ed25519Agent } from "@selfxyz/agent-sdk";
+import type { SelfAgentVerifier } from "@selfxyz/agent-sdk";
 import TestCard, { type StepEntry } from "@/components/TestCard";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
@@ -1022,7 +1021,7 @@ async function runPeerTest(
     if (demoTs) log(id, `x-self-agent-timestamp: ${demoTs}`);
 
     if (demoSig && demoTs) {
-      const { SelfAgentVerifier: VerifierClass } = await import("@selfxyz/agent-sdk/dist/SelfAgentVerifier");
+      const { SelfAgentVerifier: VerifierClass } = await import("@selfxyz/agent-sdk");
       const responseVerifier = new VerifierClass({
         registryAddress: net.registryAddress,
         rpcUrl: net.rpcUrl,
@@ -1625,7 +1624,7 @@ export default function DemoPage() {
       let agent: SelfAgent | Ed25519Agent;
       if (isEd25519) {
         bootLog("Detected Ed25519 key (64-char hex without 0x prefix)");
-        const { Ed25519Agent: Ed25519AgentClass } = await import("@selfxyz/agent-sdk/dist/Ed25519Agent");
+        const { Ed25519Agent: Ed25519AgentClass } = await import("@selfxyz/agent-sdk");
         agent = new Ed25519AgentClass({
           privateKey: key,
           registryAddress: network.registryAddress,

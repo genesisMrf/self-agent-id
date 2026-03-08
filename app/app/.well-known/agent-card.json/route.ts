@@ -62,27 +62,58 @@ function registryCard(): ERC8004AgentDocument {
     defaultOutputModes: ["text/plain", "application/json"],
     skills: [
       {
+        id: "agent-registration",
+        name: "Agent Registration",
+        description:
+          "Register a new AI agent on-chain with proof-of-human verification via Self Protocol. Returns a QR code for a human to scan with the Self app.",
+        tags: ["identity", "registration", "proof-of-human"],
+        examples: [
+          "Register a new agent",
+          "Register agent with address 0x1234...",
+          '{ "intent": "register", "humanAddress": "0x...", "network": "testnet" }',
+        ],
+        inputModes: ["text/plain", "application/json"],
+        outputModes: ["text/plain", "application/json"],
+      },
+      {
+        id: "registration-status",
+        name: "Registration Status",
+        description:
+          "Check the progress of an in-flight agent registration. Returns current stage (qr-ready, proof-received, completed, failed).",
+        tags: ["identity", "registration", "status"],
+        examples: [
+          '{ "intent": "register-status", "sessionToken": "<token>" }',
+        ],
+        inputModes: ["application/json"],
+        outputModes: ["text/plain", "application/json"],
+      },
+      {
         id: "agent-lookup",
         name: "Agent Lookup",
         description:
-          "Look up a registered agent by ID and return its on-chain metadata and verification status.",
+          "Look up a registered agent by ID and return its full on-chain metadata, verification status, and credentials.",
         tags: ["identity", "registry", "lookup"],
         examples: [
           "Look up agent #1",
-          "Is agent 42 verified?",
-          "Get the agent card for agent 7",
+          "Get details for agent 42",
+          '{ "intent": "lookup", "agentId": 1, "chainId": 42220 }',
         ],
+        inputModes: ["text/plain", "application/json"],
+        outputModes: ["text/plain", "application/json"],
       },
       {
         id: "human-proof-check",
         name: "Human Proof Check",
         description:
-          "Check whether an agent has a valid proof-of-human on-chain.",
+          "Check whether an agent has a valid, fresh proof-of-human on-chain.",
         tags: ["identity", "proof-of-human", "verification"],
         examples: [
-          "Does agent 1 have a human proof?",
-          "Check if agent 42 is human-verified",
+          "Verify agent #1",
+          "Does agent 42 have a human proof?",
+          '{ "intent": "verify", "agentId": 1 }',
         ],
+        inputModes: ["text/plain", "application/json"],
+        outputModes: ["text/plain", "application/json"],
       },
     ],
   };

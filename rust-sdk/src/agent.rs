@@ -53,7 +53,6 @@ pub struct AgentInfo {
 /// For off-chain authentication, the agent signs each request with its private key.
 pub struct SelfAgent {
     signer: PrivateKeySigner,
-    private_key: String,
     network_name: NetworkName,
     registry_address: Address,
     rpc_url: String,
@@ -74,7 +73,6 @@ impl SelfAgent {
 
         Ok(Self {
             signer,
-            private_key: config.private_key,
             network_name,
             registry_address: config.registry_address.unwrap_or(net.registry_address),
             rpc_url: config.rpc_url.unwrap_or_else(|| net.rpc_url.to_string()),

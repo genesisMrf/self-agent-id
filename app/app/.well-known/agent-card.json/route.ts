@@ -9,6 +9,7 @@ import { DEFAULT_NETWORK, NETWORKS } from "@/lib/network";
 import { typedRegistry, typedProvider } from "@/lib/contract-types";
 import { buildAgentCard } from "@selfxyz/agent-sdk";
 import type { ERC8004AgentDocument } from "@selfxyz/agent-sdk";
+import { getAgentCardJSON } from "@/lib/agent-discovery";
 
 // ── CORS headers ────────────────────────────────────────────────────────────
 
@@ -21,102 +22,8 @@ const CORS_HEADERS = {
 
 // ── Generic registry card (no agentId) ──────────────────────────────────────
 
-function registryCard(): ERC8004AgentDocument {
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL || "https://selfagentid.xyz";
-
-  return {
-    type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-    name: "Self Agent ID Registry",
-    description:
-      "On-chain AI agent identity registry with proof-of-human verification powered by Self Protocol.",
-    image: `${appUrl}/icon.png`,
-    services: [
-      { name: "web", endpoint: appUrl },
-      {
-        name: "A2A",
-        endpoint: `${appUrl}/api/a2a`,
-        version: "0.3.0",
-      },
-    ],
-    version: "1.0.0",
-    url: `${appUrl}/api/a2a`,
-    provider: {
-      name: "Self",
-      url: "https://self.xyz",
-    },
-    capabilities: {
-      streaming: false,
-      pushNotifications: true,
-      stateTransitionHistory: false,
-      extendedAgentCard: false,
-    },
-    supportedInterfaces: [
-      {
-        url: `${appUrl}/api/a2a`,
-        protocolBinding: "JSONRPC",
-        protocolVersion: "0.3.0",
-      },
-    ],
-    defaultInputModes: ["text/plain", "application/json"],
-    defaultOutputModes: ["text/plain", "application/json"],
-    skills: [
-      {
-        id: "agent-registration",
-        name: "Agent Registration",
-        description:
-          "Register a new AI agent on-chain with proof-of-human verification via Self Protocol. Returns a QR code for a human to scan with the Self app.",
-        tags: ["identity", "registration", "proof-of-human"],
-        examples: [
-          "Register a new agent",
-          "Register agent with address 0x1234...",
-          '{ "intent": "register", "humanAddress": "0x...", "network": "testnet" }',
-        ],
-        inputModes: ["text/plain", "application/json"],
-        outputModes: ["text/plain", "application/json"],
-      },
-      {
-        id: "registration-status",
-        name: "Registration Status",
-        description:
-          "Check the progress of an in-flight agent registration. Returns current stage (qr-ready, proof-received, completed, failed).",
-        tags: ["identity", "registration", "status"],
-        examples: [
-          '{ "intent": "register-status", "sessionToken": "<token>" }',
-        ],
-        inputModes: ["application/json"],
-        outputModes: ["text/plain", "application/json"],
-      },
-      {
-        id: "agent-lookup",
-        name: "Agent Lookup",
-        description:
-          "Look up a registered agent by ID and return its full on-chain metadata, verification status, and credentials.",
-        tags: ["identity", "registry", "lookup"],
-        examples: [
-          "Look up agent #1",
-          "Get details for agent 42",
-          '{ "intent": "lookup", "agentId": 1, "chainId": 42220 }',
-        ],
-        inputModes: ["text/plain", "application/json"],
-        outputModes: ["text/plain", "application/json"],
-      },
-      {
-        id: "human-proof-check",
-        name: "Human Proof Check",
-        description:
-          "Check whether an agent has a valid, fresh proof-of-human on-chain.",
-        tags: ["identity", "proof-of-human", "verification"],
-        examples: [
-          "Verify agent #1",
-          "Does agent 42 have a human proof?",
-          '{ "intent": "verify", "agentId": 1 }',
-        ],
-        inputModes: ["text/plain", "application/json"],
-        outputModes: ["text/plain", "application/json"],
-      },
-    ],
-  };
+function registryCard() {
+  return getAgentCardJSON();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

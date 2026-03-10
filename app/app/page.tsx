@@ -298,55 +298,123 @@ export default function Home() {
 
       {/* ────────────── How It Works ────────────── */}
       <section className="px-6 py-20">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-4">How It Works</h2>
+          <p className="text-center text-muted mb-12 max-w-2xl mx-auto">
+            Two ways to register your agent &mdash; use the guided wizard or integrate directly with the SDK.
+          </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-4 md:gap-0">
-            {[
-              {
-                icon: ScanLine,
-                title: "Choose a Mode & Verify",
-                desc: "A guided wizard walks you through registration. Pick how you want to secure your agent, then scan your passport with the Self app. A zero-knowledge proof is generated on your phone — no personal data leaves your device.",
-              },
-              {
-                icon: Bot,
-                title: "Your Agent Gets an Identity",
-                desc: "Your agent receives a soulbound NFT and a verified identity linked to a real human. You stay completely anonymous — only the proof is stored on-chain.",
-              },
-              {
-                icon: Zap,
-                title: "Services Verify Instantly",
-                desc: "Any service can check your agent's identity with a single API call. No extra setup needed.",
-              },
-            ].map((step, i) => (
-              <React.Fragment key={i}>
-                {i > 0 && (
-                  <div className="hidden md:flex items-center justify-center px-2">
-                    <ArrowRight
-                      size={20}
-                      className="text-subtle flex-shrink-0"
-                    />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Path 1: Guided Registration */}
+            <Card glow className="flex flex-col">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+                  <ScanLine size={20} className="text-accent" />
+                </div>
+                <div>
+                  <Badge variant="info" className="mb-1">Guided</Badge>
+                  <h3 className="font-bold text-lg">Web Registration Wizard</h3>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 flex-1">
+                {[
+                  {
+                    step: "1",
+                    title: "Choose Your Role & Mode",
+                    desc: "Are you a human registering your own agent, or a bot operator? Pick a security mode: connect a wallet, use a passkey, social login, Ed25519 key, or go fully wallet-free.",
+                  },
+                  {
+                    step: "2",
+                    title: "Scan Your Passport",
+                    desc: "Scan the QR code with the Self app and tap your passport. A zero-knowledge proof is generated on your phone \u2014 no personal data leaves your device.",
+                  },
+                  {
+                    step: "3",
+                    title: "Agent Identity Minted",
+                    desc: "Your agent receives a soulbound NFT and a verified on-chain identity linked to a real human. You stay completely anonymous.",
+                  },
+                ].map((item) => (
+                  <div key={item.step} className="flex gap-3">
+                    <span className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 text-xs font-bold text-accent">
+                      {item.step}
+                    </span>
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{item.title}</p>
+                      <p className="text-sm text-muted leading-relaxed">{item.desc}</p>
+                    </div>
                   </div>
-                )}
-                {i > 0 && (
-                  <div className="flex md:hidden items-center justify-center">
-                    <ArrowRight size={20} className="text-subtle rotate-90" />
+                ))}
+              </div>
+              <div className="mt-6 pt-4 border-t border-border">
+                <Link href="/agents/register">
+                  <Button variant="primary" size="sm">
+                    Open Registration Wizard <ArrowRight size={14} />
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+
+            {/* Path 2: SDK / Programmatic */}
+            <Card glow className="flex flex-col">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-accent-2/10 flex items-center justify-center flex-shrink-0">
+                  <Code2 size={20} className="text-accent-2" />
+                </div>
+                <div>
+                  <Badge variant="muted" className="mb-1">Programmatic</Badge>
+                  <h3 className="font-bold text-lg">SDK &amp; CLI Registration</h3>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 flex-1">
+                {[
+                  {
+                    step: "1",
+                    title: "Install the SDK or CLI",
+                    desc: "Add @selfxyz/agent-sdk to your project, or use the self-agent CLI. Available for TypeScript, Python, and Rust.",
+                  },
+                  {
+                    step: "2",
+                    title: "Generate Keys & Register",
+                    desc: "Create an ECDSA or Ed25519 keypair. The SDK builds the registration transaction and triggers the passport scan via QR code or deep link.",
+                  },
+                  {
+                    step: "3",
+                    title: "Sign & Verify Anywhere",
+                    desc: "Your agent signs requests with its key. Any service running the SDK verifier can check identity, age, OFAC status, and more \u2014 in one API call.",
+                  },
+                ].map((item) => (
+                  <div key={item.step} className="flex gap-3">
+                    <span className="w-7 h-7 rounded-full bg-accent-2/10 flex items-center justify-center flex-shrink-0 text-xs font-bold text-accent-2">
+                      {item.step}
+                    </span>
+                    <div>
+                      <p className="font-semibold text-sm text-foreground">{item.title}</p>
+                      <p className="text-sm text-muted leading-relaxed">{item.desc}</p>
+                    </div>
                   </div>
-                )}
-                <Card
-                  glow
-                  className="flex flex-col items-center text-center h-full"
-                >
-                  <div className="w-20 h-20 rounded-full bg-accent/10 flex items-center justify-center mb-4">
-                    <step.icon size={40} className="text-accent" />
-                  </div>
-                  <h3 className="font-bold mb-2">{step.title}</h3>
-                  <p className="text-sm text-muted leading-relaxed">
-                    {step.desc}
-                  </p>
-                </Card>
-              </React.Fragment>
-            ))}
+                ))}
+              </div>
+              <div className="mt-6 pt-4 border-t border-border">
+                <Link href="/integration">
+                  <Button variant="secondary" size="sm">
+                    Integration Guide <ArrowRight size={14} />
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          </div>
+
+          {/* Shared outcome */}
+          <div className="mt-8 text-center">
+            <Card glow className="inline-flex items-center gap-3 px-6 py-4">
+              <div className="w-10 h-10 rounded-full bg-accent-success/10 flex items-center justify-center flex-shrink-0">
+                <Zap size={20} className="text-accent-success" />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-sm">Either way, services verify instantly</p>
+                <p className="text-sm text-muted">Any service can check your agent&apos;s identity with a single API call. No extra setup needed.</p>
+              </div>
+            </Card>
           </div>
         </div>
       </section>

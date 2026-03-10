@@ -45,6 +45,12 @@ pub const DEFAULT_MAX_AGE_MS: u64 = 5 * 60 * 1000;
 /// Default cache TTL for on-chain status (1 minute).
 pub const DEFAULT_CACHE_TTL_MS: u64 = 60_000;
 
+/// Warning threshold: proofs expiring within this many days trigger `is_expiring_soon`.
+pub const EXPIRY_WARNING_DAYS: i32 = 30;
+
+/// Action byte for proof refresh requests.
+pub const ACTION_REFRESH: u8 = 0x46;
+
 /// Request headers used by the signing protocol.
 pub mod headers {
     /// Agent's Ethereum address (informational — identity is recovered from signature).

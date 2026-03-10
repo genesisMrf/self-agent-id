@@ -85,8 +85,9 @@ pub use registration::{
     get_registration_config_index, sign_registration_challenge,
 };
 pub use registration_flow::{
-    DeregistrationRequest, DeregistrationSession, RegistrationError, RegistrationRequest,
-    RegistrationResult, RegistrationSession,
+    DeregistrationRequest, DeregistrationSession, ProofRefreshRequest, ProofRefreshResult,
+    RefreshSession, RegistrationError, RegistrationRequest, RegistrationResult,
+    RegistrationSession, request_proof_refresh,
 };
 pub use verifier::{
     AgentCredentials, RateLimitConfig, SelfAgentVerifier, VerificationResult, VerifierBuilder,

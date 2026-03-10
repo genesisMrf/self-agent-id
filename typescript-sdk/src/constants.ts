@@ -23,6 +23,13 @@ export const REGISTRY_ABI = [
   "function isProofFresh(uint256 agentId) view returns (bool)",
   // Replay-protection nonces for registration signatures
   "function agentNonces(address agent) view returns (uint256)",
+  // Nullifier → agent lookups
+  "function getAgentsForNullifier(uint256 nullifier) view returns (uint256[])",
+  "function getAgentsForNullifier(uint256 nullifier, uint256 offset, uint256 limit) view returns (uint256[])",
+  // Agent config identifier
+  "function agentConfigId(uint256 agentId) view returns (bytes32)",
+  // Proof refresh event
+  "event HumanProofRefreshed(uint256 indexed agentId, uint256 newExpiry, uint256 nullifier, bytes32 configId)",
 ] as const;
 
 /** ABI for IHumanProofProvider — used to query provider metadata */
@@ -57,6 +64,9 @@ export const DEFAULT_REGISTRY_ADDRESS = NETWORKS.mainnet.registryAddress;
 
 /** @deprecated Use NETWORKS[network].rpcUrl instead */
 export const DEFAULT_RPC_URL = NETWORKS.mainnet.rpcUrl;
+
+/** Self Hub V2 action byte for proof refresh */
+export const ACTION_REFRESH = 0x46; // 'F'
 
 /** Default signature validity window (5 minutes) */
 export const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000;

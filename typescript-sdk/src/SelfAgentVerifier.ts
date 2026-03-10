@@ -120,6 +120,12 @@ export interface VerificationResult {
   error?: string;
   /** Milliseconds until the rate limit resets (only set when rate limited) */
   retryAfterMs?: number;
+  /** When the agent's human proof expires (undefined if no expiry set) */
+  proofExpiresAt?: Date;
+  /** Number of days until the proof expires (undefined if no expiry set, negative if already expired) */
+  daysUntilExpiry?: number;
+  /** Whether the proof is expiring within 30 days */
+  isExpiringSoon?: boolean;
 }
 
 interface CacheEntry {
@@ -129,6 +135,7 @@ interface CacheEntry {
   agentCount: bigint;
   nullifier: bigint;
   providerAddress: string;
+  proofExpiresAtTimestamp: bigint;
   expiresAt: number;
 }
 
@@ -552,7 +559,18 @@ export class SelfAgentVerifier {
       agentCount,
       nullifier,
       providerAddress,
+      proofExpiresAtTimestamp,
     } = await this.checkOnChain(agentKey);
+
+    // Compute expiry fields from on-chain timestamp
+    const proofExpiresAt = proofExpiresAtTimestamp > 0n
+      ? new Date(Number(proofExpiresAtTimestamp) * 1000)
+      : undefined;
+    const now = Math.floor(Date.now() / 1000);
+    const daysUntilExpiry = proofExpiresAtTimestamp > 0n
+      ? Math.floor((Number(proofExpiresAtTimestamp) - now) / 86400)
+      : undefined;
+    const isExpiringSoon = daysUntilExpiry !== undefined && daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
 
     if (!isVerified) {
       return {
@@ -562,6 +580,9 @@ export class SelfAgentVerifier {
         agentId,
         agentCount,
         nullifier,
+        proofExpiresAt,
+        daysUntilExpiry,
+        isExpiringSoon,
         error: "Agent not verified on-chain",
       };
     }
@@ -575,6 +596,9 @@ export class SelfAgentVerifier {
         agentId,
         agentCount,
         nullifier,
+        proofExpiresAt,
+        daysUntilExpiry,
+        isExpiringSoon,
         error: "Agent's human proof has expired",
       };
     }
@@ -592,6 +616,9 @@ export class SelfAgentVerifier {
           agentId,
           agentCount,
           nullifier,
+          proofExpiresAt,
+          daysUntilExpiry,
+          isExpiringSoon,
           error: "Unable to verify proof provider — RPC error",
         };
       }
@@ -603,6 +630,9 @@ export class SelfAgentVerifier {
           agentId,
           agentCount,
           nullifier,
+          proofExpiresAt,
+          daysUntilExpiry,
+          isExpiringSoon,
           error: "Agent was not verified by Self — proof provider mismatch",
         };
       }
@@ -620,6 +650,9 @@ export class SelfAgentVerifier {
         agentId,
         agentCount,
         nullifier,
+        proofExpiresAt,
+        daysUntilExpiry,
+        isExpiringSoon,
         error: `Human has ${agentCount} agents (max ${this.maxAgentsPerHuman})`,
       };
     }
@@ -644,6 +677,9 @@ export class SelfAgentVerifier {
           agentCount,
           nullifier,
           credentials,
+          proofExpiresAt,
+          daysUntilExpiry,
+          isExpiringSoon,
           error: `Agent's human does not meet minimum age (required: ${this.minimumAge}, got: ${credentials.olderThan})`,
         };
       }
@@ -657,6 +693,9 @@ export class SelfAgentVerifier {
           agentCount,
           nullifier,
           credentials,
+          proofExpiresAt,
+          daysUntilExpiry,
+          isExpiringSoon,
           error: "Agent's human did not pass OFAC screening",
         };
       }
@@ -671,6 +710,9 @@ export class SelfAgentVerifier {
             agentCount,
             nullifier,
             credentials,
+            proofExpiresAt,
+            daysUntilExpiry,
+            isExpiringSoon,
             error: `Nationality "${credentials.nationality}" not in allowed list`,
           };
         }
@@ -689,6 +731,9 @@ export class SelfAgentVerifier {
           agentCount,
           nullifier,
           credentials,
+          proofExpiresAt,
+          daysUntilExpiry,
+          isExpiringSoon,
           error: limited.error,
           retryAfterMs: limited.retryAfterMs,
         };
@@ -703,6 +748,9 @@ export class SelfAgentVerifier {
       agentCount,
       nullifier,
       credentials,
+      proofExpiresAt,
+      daysUntilExpiry,
+      isExpiringSoon,
     };
   }
 
@@ -716,6 +764,7 @@ export class SelfAgentVerifier {
     agentCount: bigint;
     nullifier: bigint;
     providerAddress: string;
+    proofExpiresAtTimestamp: bigint;
   }> {
     const cached = this.cache.get(agentKey);
     if (cached && cached.expiresAt > Date.now()) {
@@ -726,6 +775,7 @@ export class SelfAgentVerifier {
         agentCount: cached.agentCount,
         nullifier: cached.nullifier,
         providerAddress: cached.providerAddress,
+        proofExpiresAtTimestamp: cached.proofExpiresAtTimestamp,
       };
     }
 
@@ -734,11 +784,12 @@ export class SelfAgentVerifier {
       this.registry.getAgentId(agentKey),
     ]);
 
-    // Fetch sybil data, provider address, and proof freshness if agent exists
+    // Fetch sybil data, provider address, proof freshness, and expiry if agent exists
     let agentCount = 0n;
     let nullifier = 0n;
     let providerAddress = "";
     let isProofFresh = false;
+    let proofExpiresAtTimestamp = 0n;
     if (agentId > 0n) {
       const promises: Promise<unknown>[] = [];
 
@@ -746,6 +797,13 @@ export class SelfAgentVerifier {
       promises.push(
         this.registry.isProofFresh(agentId).then((fresh) => {
           isProofFresh = fresh;
+        }),
+      );
+
+      // Always fetch proof expiry timestamp
+      promises.push(
+        this.registry.proofExpiresAt(agentId).then((ts) => {
+          proofExpiresAtTimestamp = ts;
         }),
       );
 
@@ -776,6 +834,7 @@ export class SelfAgentVerifier {
       agentCount,
       nullifier,
       providerAddress,
+      proofExpiresAtTimestamp,
       expiresAt: Date.now() + this.cacheTtlMs,
     });
 
@@ -786,6 +845,7 @@ export class SelfAgentVerifier {
       agentCount,
       nullifier,
       providerAddress,
+      proofExpiresAtTimestamp,
     };
   }
 

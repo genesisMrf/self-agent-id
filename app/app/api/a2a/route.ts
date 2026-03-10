@@ -94,6 +94,7 @@ type Intent =
   | { type: "verify"; agentId: number; chainId?: number }
   | { type: "deregister"; agentId: number; chainId?: number }
   | { type: "check-freshness"; agentId: number; chainId?: number }
+  | { type: "refresh-proof"; agentId: number; chainId?: number }
   | { type: "help" }
   | { type: "unknown"; text: string };
 
@@ -177,9 +178,16 @@ function parseIntent(message: Message): Intent {
         chainId: data.chainId ? Number(data.chainId) : undefined,
       };
     }
-    if (intent === "freshness" || intent === "check-freshness" || intent === "refresh" || intent === "re-verify" || intent === "reauthenticate") {
+    if (intent === "freshness" || intent === "check-freshness") {
       return {
         type: "check-freshness",
+        agentId: Number(data.agentId),
+        chainId: data.chainId ? Number(data.chainId) : undefined,
+      };
+    }
+    if (intent === "refresh-proof" || intent === "refresh" || intent === "renew" || intent === "re-verify" || intent === "reauthenticate") {
+      return {
+        type: "refresh-proof",
         agentId: Number(data.agentId),
         chainId: data.chainId ? Number(data.chainId) : undefined,
       };
@@ -230,10 +238,18 @@ function parseIntent(message: Message): Intent {
     return { type: "unknown", text: "Please provide your session token to check registration status. Send a data part with { intent: 'register-status', sessionToken: '<token>' }." };
   }
 
-  // "freshness agent #5" / "is agent 5 expired" / "renew agent 5" / "re-verify agent 5"
-  // "check freshness of agent #1" / "freshness of agent 5"
+  // "refresh proof for agent #5" / "renew agent 5" / "re-verify agent 5"
+  const refreshMatch = text.match(
+    /(?:refresh|renew|re-?verif)\w*\s+(?:proof\s+(?:for\s+)?)?(?:agent\s*)?#?(\d+)/i,
+  );
+  if (refreshMatch) {
+    const chainId = text.includes("mainnet") ? 42220 : text.includes("testnet") ? 11142220 : undefined;
+    return { type: "refresh-proof", agentId: Number(refreshMatch[1]), chainId };
+  }
+
+  // "freshness agent #5" / "is agent 5 expired" / "check freshness of agent #1"
   const freshMatch = text.match(
-    /(?:fresh|expir|renew|re-?auth|re-?verif|refresh)\w*\s+(?:of\s+)?(?:agent\s*)?#?(\d+)/,
+    /(?:fresh|expir)\w*\s+(?:of\s+)?(?:agent\s*)?#?(\d+)/,
   );
   if (freshMatch) {
     const chainId = text.includes("mainnet") ? 42220 : text.includes("testnet") ? 11142220 : undefined;
@@ -718,7 +734,7 @@ async function handleLookup(
     const rpc = new ethers.JsonRpcProvider(config.rpc);
     const registry = typedRegistry(config.registry, rpc);
 
-    const [agentKey, hasProof, providerAddr, registeredAt, credentials] =
+    const [agentKey, hasProof, providerAddr, registeredAt, credentials, proofExpiry] =
       await Promise.all([
         registry.agentIdToAgentKey(BigInt(agentId)),
         registry.hasHumanProof(BigInt(agentId)),
@@ -729,6 +745,7 @@ async function handleLookup(
           olderThan: bigint;
           ofac: [boolean, boolean, boolean];
         }>,
+        registry.proofExpiresAt(BigInt(agentId)).catch(() => 0n),
       ]);
 
     if (agentKey === ethers.ZeroHash) {
@@ -756,6 +773,14 @@ async function handleLookup(
 
     const networkLabel = cid === "42220" ? "mainnet" : "testnet";
 
+    // Compute expiry fields
+    const proofExpiresAtMs = Number(proofExpiry) * 1000;
+    const daysUntilExpiry = proofExpiresAtMs > 0
+      ? Math.floor((proofExpiresAtMs - Date.now()) / (1000 * 60 * 60 * 24))
+      : null;
+    const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
+    const proofExpiresAtISO = proofExpiresAtMs > 0 ? new Date(proofExpiresAtMs).toISOString() : null;
+
     return {
       id: taskId,
       status: {
@@ -772,6 +797,8 @@ async function handleLookup(
               `- Age verified: ${Number(credentials.olderThan) > 0 ? `${credentials.olderThan}+` : "No"}`,
               `- OFAC screened: ${credentials.ofac?.[0] ? "Yes" : "No"}`,
               `- Registered: ${new Date(Number(registeredAt) * 1000).toISOString()}`,
+              ...(proofExpiresAtISO ? [`- Proof expires: ${proofExpiresAtISO}${daysUntilExpiry !== null ? ` (${daysUntilExpiry} days)` : ""}`] : []),
+              ...(isExpiringSoon ? ["- WARNING: Proof is expiring soon! Consider refreshing."] : []),
             ),
             dataPart({
               agentId,
@@ -780,6 +807,9 @@ async function handleLookup(
               isVerified: hasProof,
               verificationStrength,
               strengthLabel,
+              proofExpiresAt: proofExpiresAtISO,
+              daysUntilExpiry,
+              isExpiringSoon,
               credentials: {
                 nationality: credentials.nationality,
                 olderThan: Number(credentials.olderThan),
@@ -846,7 +876,10 @@ async function handleVerify(
     const rpc = new ethers.JsonRpcProvider(config.rpc);
     const registry = typedRegistry(config.registry, rpc);
 
-    const hasProof = await registry.hasHumanProof(BigInt(agentId));
+    const [hasProof, proofExpiry] = await Promise.all([
+      registry.hasHumanProof(BigInt(agentId)),
+      registry.proofExpiresAt(BigInt(agentId)).catch(() => 0n),
+    ]);
 
     let isFresh = true;
     try {
@@ -856,6 +889,14 @@ async function handleVerify(
     }
 
     const verified = hasProof && isFresh;
+
+    // Compute expiry fields
+    const proofExpiresAtMs = Number(proofExpiry) * 1000;
+    const daysUntilExpiry = proofExpiresAtMs > 0
+      ? Math.floor((proofExpiresAtMs - Date.now()) / (1000 * 60 * 60 * 24))
+      : null;
+    const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 30;
+    const proofExpiresAtISO = proofExpiresAtMs > 0 ? new Date(proofExpiresAtMs).toISOString() : null;
 
     return {
       id: taskId,
@@ -870,6 +911,8 @@ async function handleVerify(
                 : hasProof && !isFresh
                   ? `Agent #${agentId} has a human proof but it has expired.`
                   : `Agent #${agentId} does not have a human proof.`,
+              ...(proofExpiresAtISO && hasProof ? [`Proof expires: ${proofExpiresAtISO}${daysUntilExpiry !== null ? ` (${daysUntilExpiry} days remaining)` : ""}`] : []),
+              ...(isExpiringSoon ? ["WARNING: Proof is expiring soon! Consider refreshing."] : []),
             ),
             dataPart({
               agentId,
@@ -877,6 +920,9 @@ async function handleVerify(
               hasHumanProof: hasProof,
               isProofFresh: isFresh,
               isVerified: verified,
+              proofExpiresAt: proofExpiresAtISO,
+              daysUntilExpiry,
+              isExpiringSoon,
             }),
           ],
         },
@@ -1030,10 +1076,24 @@ async function handleCheckFreshness(
     const rpc = new ethers.JsonRpcProvider(config.rpc);
     const registry = typedRegistry(config.registry, rpc);
 
-    const [hasProof, expiresAt] = await Promise.all([
+    const [hasProof, expiresAt, nullifier] = await Promise.all([
       registry.hasHumanProof(BigInt(agentId)),
       registry.proofExpiresAt(BigInt(agentId)),
+      registry.getHumanNullifier(BigInt(agentId)).catch(() => 0n),
     ]);
+
+    // Fetch sibling agent IDs (other agents registered by the same human)
+    let siblingAgentIds: number[] = [];
+    if (nullifier && nullifier !== 0n) {
+      try {
+        const allAgents = await registry.getAgentsForNullifier(nullifier);
+        siblingAgentIds = allAgents
+          .map((id) => Number(id))
+          .filter((id) => id !== agentId);
+      } catch {
+        // getAgentsForNullifier may not be available on older contracts
+      }
+    }
 
     if (!hasProof) {
       return {
@@ -1081,6 +1141,7 @@ async function handleCheckFreshness(
                 hasProof: true,
                 isExpired: true,
                 expiresAt: new Date(expiresAtMs).toISOString(),
+                siblingAgentIds,
                 action: "re-register",
                 steps: [
                   { intent: "deregister", agentId },
@@ -1116,6 +1177,7 @@ async function handleCheckFreshness(
                 isWarning: true,
                 remainingDays,
                 expiresAt: new Date(expiresAtMs).toISOString(),
+                siblingAgentIds,
               }),
             ],
           },
@@ -1141,6 +1203,7 @@ async function handleCheckFreshness(
               isWarning: false,
               remainingDays,
               expiresAt: new Date(expiresAtMs).toISOString(),
+              siblingAgentIds,
             }),
           ],
         },
@@ -1151,6 +1214,116 @@ async function handleCheckFreshness(
     return {
       id: taskId,
       status: { state: "failed", message: { role: "agent", parts: textParts(`Freshness check failed: ${err instanceof Error ? err.message : "Network error"}`) }, timestamp: new Date().toISOString() },
+    };
+  }
+}
+
+async function handleRefreshProof(
+  agentId: number,
+  chainId: number | undefined,
+  taskId: string,
+  req?: NextRequest,
+): Promise<Task> {
+  const { chainId: cid, config } = resolveChainConfig(chainId);
+  if (!config) {
+    return {
+      id: taskId,
+      status: { state: "failed", message: { role: "agent", parts: textParts(`Unsupported chain: ${cid}`) }, timestamp: new Date().toISOString() },
+    };
+  }
+
+  const network = cid === "42220" ? "mainnet" : "testnet";
+  const appUrl = getAppBaseUrl(req);
+
+  try {
+    const fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+    if (bypassSecret) fetchHeaders["x-vercel-protection-bypass"] = bypassSecret;
+    const cookies = req?.headers.get("cookie");
+    if (cookies) fetchHeaders["cookie"] = cookies;
+
+    const res = await fetch(`${appUrl}/api/agent/refresh`, {
+      method: "POST",
+      headers: fetchHeaders,
+      body: JSON.stringify({ agentId, network }),
+    });
+
+    const result = (await res.json()) as Record<string, unknown>;
+
+    if (!res.ok) {
+      return {
+        id: taskId,
+        status: {
+          state: "failed",
+          message: { role: "agent", parts: textParts(`Proof refresh failed: ${result.error || "Unknown error"}`) },
+          timestamp: new Date().toISOString(),
+        },
+      };
+    }
+
+    const deepLink = result.deepLink as string;
+    let qrParts: Part[] = [];
+    try {
+      const qrDataUrl = await generateQRBase64(deepLink);
+      const base64 = qrDataUrl.split(",")[1];
+      qrParts = [{
+        type: "file" as const,
+        file: { name: "refresh-proof-qr.png", mimeType: "image/png", bytes: base64 },
+      }];
+    } catch { /* QR gen failed — deep link still available */ }
+
+    taskSessionStore.set(taskId, result.sessionToken as string);
+
+    return {
+      id: taskId,
+      status: {
+        state: "input-required",
+        message: {
+          role: "agent",
+          parts: [
+            ...textParts(
+              `Proof refresh initiated for Agent #${agentId}.`,
+              "",
+              "A human must scan this QR code with the Self app to provide a fresh proof.",
+              "If on mobile, open this link instead:",
+              `${deepLink}`,
+              "",
+              "Steps for the human:",
+              "1. Scan the QR code below with your phone camera (or tap the link above if on mobile)",
+              "2. The Self app will open — follow the prompts",
+              "3. Scan your passport (NFC chip) when prompted",
+              "4. The proof will be refreshed on-chain automatically",
+              "",
+              `Session expires at: ${result.expiresAt} (${Math.round((result.timeRemainingMs as number) / 1000)}s remaining)`,
+              "",
+              "To check status, send:",
+              `  { "intent": "status", "taskId": "${taskId}" }`,
+            ),
+            ...qrParts,
+            dataPart({
+              taskId,
+              sessionToken: result.sessionToken,
+              deepLink,
+              qrImageIncluded: qrParts.length > 0,
+              agentId,
+              network,
+              action: "refresh-proof",
+              expiresAt: result.expiresAt,
+              timeRemainingMs: result.timeRemainingMs,
+            }),
+          ],
+        },
+        timestamp: new Date().toISOString(),
+      },
+    };
+  } catch (err) {
+    return {
+      id: taskId,
+      status: {
+        state: "failed",
+        message: { role: "agent", parts: textParts(`Proof refresh failed: ${err instanceof Error ? err.message : "Network error"}`) },
+        timestamp: new Date().toISOString(),
+      },
     };
   }
 }
@@ -1219,6 +1392,10 @@ function handleHelp(taskId: string): Task {
             "6. Check proof freshness — See if an agent's proof is still valid or expiring soon",
             '   Say: "Is agent #5 still fresh?" or send { intent: "freshness", agentId: 5 }',
             "   Returns: days remaining, expiry date, and re-registration steps if expired.",
+            "",
+            "7. Refresh proof — Initiate a proof refresh for an existing agent (re-verify without deregistering)",
+            '   Say: "Refresh proof for agent #5" or send { intent: "refresh-proof", agentId: 5 }',
+            "   The human scans their passport again; the on-chain proof expiry is updated.",
             "",
             "All queries default to mainnet (Celo). Add chainId: 11142220 or network: \"testnet\" for Celo Sepolia (mock documents via the Self app, no real passport needed).",
           ),
@@ -1320,6 +1497,9 @@ const registryTaskHandler: TaskHandler = {
       case "check-freshness":
         task = await handleCheckFreshness(intent.agentId, intent.chainId, taskId);
         break;
+      case "refresh-proof":
+        task = await handleRefreshProof(intent.agentId, intent.chainId, taskId, currentRequest);
+        break;
       case "help":
         task = handleHelp(taskId);
         break;
@@ -1342,6 +1522,7 @@ const registryTaskHandler: TaskHandler = {
                     { intent: "verify", agentId: 1 },
                     { intent: "deregister", agentId: 1 },
                     { intent: "freshness", agentId: 1 },
+                    { intent: "refresh-proof", agentId: 1 },
                     { intent: "help" },
                   ],
                 }),
@@ -1433,6 +1614,7 @@ const a2aServer = new A2AServer(registryTaskHandler);
  *   - verify: Check human proof status
  *   - deregister: Permanently remove an agent (burns NFT)
  *   - check-freshness: Check if an agent's proof is still valid or expiring
+ *   - refresh-proof: Initiate a proof refresh for an existing agent
  *   - help: List capabilities
  *
  * Optional agent verification: If the request includes an `X-Agent-Id` header,

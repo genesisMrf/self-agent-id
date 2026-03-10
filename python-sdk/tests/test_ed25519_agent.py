@@ -168,6 +168,7 @@ def _setup_verified(registry):
     """Set up mock for a verified agent."""
     registry.functions.isVerifiedAgent.return_value.call.return_value = True
     registry.functions.isProofFresh.return_value.call.return_value = True
+    registry.functions.proofExpiresAt.return_value.call.return_value = int(time.time()) + 86400 * 365
     registry.functions.getAgentId.return_value.call.return_value = 5
     registry.functions.getHumanNullifier.return_value.call.return_value = 42
     registry.functions.getAgentCountForHuman.return_value.call.return_value = 1

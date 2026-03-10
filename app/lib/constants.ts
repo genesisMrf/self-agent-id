@@ -51,7 +51,15 @@ export const REGISTRY_ABI = [
   // ERC-8004: proof expiry
   "function proofExpiresAt(uint256 agentId) view returns (uint256)",
   "function isProofFresh(uint256 agentId) view returns (bool)",
+  // ERC-8004: agents-by-nullifier lookup
+  "function getAgentsForNullifier(uint256 nullifier) view returns (uint256[])",
+  "function getAgentsForNullifier(uint256 nullifier, uint256 offset, uint256 limit) view returns (uint256[])",
+  // Agent config identifier (used for proof refresh)
+  "function agentConfigId(uint256 agentId) view returns (bytes32)",
+  "function configIds(uint256 index) view returns (bytes32)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+  // Proof refresh event
+  "event HumanProofRefreshed(uint256 indexed agentId, uint256 newExpiry, uint256 nullifier, bytes32 configId)",
 ] as const;
 
 // Provider ABI — used to query provider metadata

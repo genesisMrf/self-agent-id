@@ -35,9 +35,13 @@ from .registration_flow import (
     RegistrationSession,
     RegistrationResult,
     DeregistrationSession,
+    RefreshSession,
+    RefreshResult,
     ExpiredSessionError,
     DEFAULT_API_BASE,
+    request_proof_refresh,
 )
+from .constants import ACTION_REFRESH, EXPIRY_WARNING_THRESHOLD_SECS
 
 __all__ = [
     "SelfAgent", "Ed25519Agent", "SelfAgentVerifier", "VerifierBuilder", "RateLimiter",
@@ -64,6 +68,11 @@ __all__ = [
     "RegistrationSession",
     "RegistrationResult",
     "DeregistrationSession",
+    "RefreshSession",
+    "RefreshResult",
     "ExpiredSessionError",
     "DEFAULT_API_BASE",
+    "request_proof_refresh",
+    "ACTION_REFRESH",
+    "EXPIRY_WARNING_THRESHOLD_SECS",
 ]

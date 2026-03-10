@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::agent::{address_to_agent_key, compute_signing_message};
 use crate::constants::{
     network_config, IAgentRegistry, NetworkName, DEFAULT_CACHE_TTL_MS, DEFAULT_MAX_AGE_MS,
-    DEFAULT_NETWORK,
+    DEFAULT_NETWORK, EXPIRY_WARNING_DAYS,
 };
 use crate::ed25519_agent::derive_address_from_pubkey;
 
@@ -135,6 +135,12 @@ pub struct VerificationResult {
     pub error: Option<String>,
     /// Milliseconds until the rate limit resets (only set when rate limited).
     pub retry_after_ms: Option<u64>,
+    /// Unix timestamp (seconds) when the agent's proof expires. `None` if no expiry set.
+    pub proof_expires_at: Option<u64>,
+    /// Number of days until the proof expires. Negative if already expired, `None` if no expiry set.
+    pub days_until_expiry: Option<i32>,
+    /// Whether the proof is expiring within 30 days.
+    pub is_expiring_soon: bool,
 }
 
 impl VerificationResult {
@@ -149,6 +155,9 @@ impl VerificationResult {
             credentials: None,
             error: Some(error.to_string()),
             retry_after_ms: None,
+            proof_expires_at: None,
+            days_until_expiry: None,
+            is_expiring_soon: false,
         }
     }
 }
@@ -402,6 +411,7 @@ struct CacheEntry {
     agent_count: U256,
     nullifier: U256,
     provider_address: Address,
+    proof_expires_at_timestamp: U256,
     expires_at: u64,
 }
 
@@ -412,6 +422,7 @@ struct OnChainStatus {
     agent_count: U256,
     nullifier: U256,
     provider_address: Address,
+    proof_expires_at_timestamp: U256,
 }
 
 // ---------------------------------------------------------------------------
@@ -591,6 +602,9 @@ impl SelfAgentVerifier {
                     credentials: None,
                     error: Some(err),
                     retry_after_ms: None,
+                    proof_expires_at: None,
+                    days_until_expiry: None,
+                    is_expiring_soon: false,
                 };
             }
         }
@@ -612,9 +626,15 @@ impl SelfAgentVerifier {
                     credentials: None,
                     error: Some(format!("RPC error: {}", e)),
                     retry_after_ms: None,
+                    proof_expires_at: None,
+                    days_until_expiry: None,
+                    is_expiring_soon: false,
                 };
             }
         };
+
+        // Compute expiry fields from the on-chain timestamp
+        let expiry = compute_expiry_fields(on_chain.proof_expires_at_timestamp);
 
         if !on_chain.is_verified {
             return VerificationResult {
@@ -627,6 +647,9 @@ impl SelfAgentVerifier {
                 credentials: None,
                 error: Some("Agent not verified on-chain".to_string()),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -642,6 +665,9 @@ impl SelfAgentVerifier {
                 credentials: None,
                 error: Some("Agent's human proof has expired".to_string()),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -662,6 +688,9 @@ impl SelfAgentVerifier {
                             "Unable to verify proof provider — RPC error".to_string(),
                         ),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             };
@@ -678,6 +707,9 @@ impl SelfAgentVerifier {
                         "Agent was not verified by Self — proof provider mismatch".to_string(),
                     ),
                     retry_after_ms: None,
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
         }
@@ -699,6 +731,9 @@ impl SelfAgentVerifier {
                     on_chain.agent_count, self.max_agents_per_human
                 )),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -726,6 +761,9 @@ impl SelfAgentVerifier {
                             min_age, creds.older_than
                         )),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             }
@@ -741,6 +779,9 @@ impl SelfAgentVerifier {
                     credentials: credentials.clone(),
                     error: Some("Agent's human did not pass OFAC screening".to_string()),
                     retry_after_ms: None,
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
 
@@ -759,6 +800,9 @@ impl SelfAgentVerifier {
                             creds.nationality
                         )),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             }
@@ -778,6 +822,9 @@ impl SelfAgentVerifier {
                     credentials,
                     error: Some(limited.error),
                     retry_after_ms: Some(limited.retry_after_ms),
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
         }
@@ -792,6 +839,9 @@ impl SelfAgentVerifier {
             credentials,
             error: None,
             retry_after_ms: None,
+            proof_expires_at: expiry.proof_expires_at,
+            days_until_expiry: expiry.days_until_expiry,
+            is_expiring_soon: expiry.is_expiring_soon,
         }
     }
 
@@ -924,6 +974,9 @@ impl SelfAgentVerifier {
                     credentials: None,
                     error: Some(err),
                     retry_after_ms: None,
+                    proof_expires_at: None,
+                    days_until_expiry: None,
+                    is_expiring_soon: false,
                 };
             }
         }
@@ -954,9 +1007,15 @@ impl SelfAgentVerifier {
                     credentials: None,
                     error: Some(format!("RPC error: {}", e)),
                     retry_after_ms: None,
+                    proof_expires_at: None,
+                    days_until_expiry: None,
+                    is_expiring_soon: false,
                 };
             }
         };
+
+        // Compute expiry fields from the on-chain timestamp
+        let expiry = compute_expiry_fields(on_chain.proof_expires_at_timestamp);
 
         if !on_chain.is_verified {
             return VerificationResult {
@@ -969,6 +1028,9 @@ impl SelfAgentVerifier {
                 credentials: None,
                 error: Some("Agent not verified on-chain".to_string()),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -983,6 +1045,9 @@ impl SelfAgentVerifier {
                 credentials: None,
                 error: Some("Agent's human proof has expired".to_string()),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -1003,6 +1068,9 @@ impl SelfAgentVerifier {
                             "Unable to verify proof provider — RPC error".to_string(),
                         ),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             };
@@ -1019,6 +1087,9 @@ impl SelfAgentVerifier {
                         "Agent was not verified by Self — proof provider mismatch".to_string(),
                     ),
                     retry_after_ms: None,
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
         }
@@ -1040,6 +1111,9 @@ impl SelfAgentVerifier {
                     on_chain.agent_count, self.max_agents_per_human
                 )),
                 retry_after_ms: None,
+                proof_expires_at: expiry.proof_expires_at,
+                days_until_expiry: expiry.days_until_expiry,
+                is_expiring_soon: expiry.is_expiring_soon,
             };
         }
 
@@ -1067,6 +1141,9 @@ impl SelfAgentVerifier {
                             min_age, creds.older_than
                         )),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             }
@@ -1082,6 +1159,9 @@ impl SelfAgentVerifier {
                     credentials: credentials.clone(),
                     error: Some("Agent's human did not pass OFAC screening".to_string()),
                     retry_after_ms: None,
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
 
@@ -1100,6 +1180,9 @@ impl SelfAgentVerifier {
                             creds.nationality
                         )),
                         retry_after_ms: None,
+                        proof_expires_at: expiry.proof_expires_at,
+                        days_until_expiry: expiry.days_until_expiry,
+                        is_expiring_soon: expiry.is_expiring_soon,
                     };
                 }
             }
@@ -1119,6 +1202,9 @@ impl SelfAgentVerifier {
                     credentials,
                     error: Some(limited.error),
                     retry_after_ms: Some(limited.retry_after_ms),
+                    proof_expires_at: expiry.proof_expires_at,
+                    days_until_expiry: expiry.days_until_expiry,
+                    is_expiring_soon: expiry.is_expiring_soon,
                 };
             }
         }
@@ -1133,6 +1219,9 @@ impl SelfAgentVerifier {
             credentials,
             error: None,
             retry_after_ms: None,
+            proof_expires_at: expiry.proof_expires_at,
+            days_until_expiry: expiry.days_until_expiry,
+            is_expiring_soon: expiry.is_expiring_soon,
         }
     }
 
@@ -1148,6 +1237,7 @@ impl SelfAgentVerifier {
                     agent_count: cached.agent_count,
                     nullifier: cached.nullifier,
                     provider_address: cached.provider_address,
+                    proof_expires_at_timestamp: cached.proof_expires_at_timestamp,
                 });
             }
         }
@@ -1170,10 +1260,18 @@ impl SelfAgentVerifier {
         let mut nullifier = U256::ZERO;
         let mut provider_address = Address::ZERO;
         let mut is_proof_fresh = false;
+        let mut proof_expires_at_timestamp = U256::ZERO;
 
         if agent_id > U256::ZERO {
             is_proof_fresh = registry
                 .isProofFresh(agent_id)
+                .call()
+                .await
+                .map_err(|e| crate::Error::RpcError(e.to_string()))?;
+
+            // Always fetch proof expiry timestamp
+            proof_expires_at_timestamp = registry
+                .proofExpiresAt(agent_id)
                 .call()
                 .await
                 .map_err(|e| crate::Error::RpcError(e.to_string()))?;
@@ -1209,6 +1307,7 @@ impl SelfAgentVerifier {
                 agent_count,
                 nullifier,
                 provider_address,
+                proof_expires_at_timestamp,
                 expires_at: now + self.cache_ttl_ms,
             },
         );
@@ -1220,6 +1319,7 @@ impl SelfAgentVerifier {
             agent_count,
             nullifier,
             provider_address,
+            proof_expires_at_timestamp,
         })
     }
 
@@ -1317,6 +1417,40 @@ impl SelfAgentVerifier {
         for (key, _) in items.into_iter().take(overflow) {
             self.replay_cache.remove(&key);
         }
+    }
+}
+
+/// Computed expiry fields derived from the on-chain `proofExpiresAt` timestamp.
+struct ExpiryFields {
+    proof_expires_at: Option<u64>,
+    days_until_expiry: Option<i32>,
+    is_expiring_soon: bool,
+}
+
+/// Compute expiry fields from an on-chain `proofExpiresAt` value (seconds since epoch).
+/// A value of zero means no expiry is set.
+fn compute_expiry_fields(proof_expires_at_timestamp: U256) -> ExpiryFields {
+    if proof_expires_at_timestamp == U256::ZERO {
+        return ExpiryFields {
+            proof_expires_at: None,
+            days_until_expiry: None,
+            is_expiring_soon: false,
+        };
+    }
+
+    let expires_at_secs: u64 = proof_expires_at_timestamp.try_into().unwrap_or(u64::MAX);
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before UNIX epoch")
+        .as_secs();
+    let days = ((expires_at_secs as i64) - (now_secs as i64)) / 86400;
+    let days_i32 = days.clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    let is_expiring_soon = days_i32 >= 0 && days_i32 <= EXPIRY_WARNING_DAYS;
+
+    ExpiryFields {
+        proof_expires_at: Some(expires_at_secs),
+        days_until_expiry: Some(days_i32),
+        is_expiring_soon,
     }
 }
 

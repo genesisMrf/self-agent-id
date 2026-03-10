@@ -135,6 +135,7 @@ export type {
 export {
   requestRegistration,
   requestDeregistration,
+  requestProofRefresh,
   getAgentInfo,
   getAgentsForHuman,
   ExpiredSessionError,
@@ -146,6 +147,8 @@ export type {
   RegistrationResult,
   DeregistrationRequest,
   DeregistrationSession,
+  ProofRefreshRequest,
+  RefreshSession,
   ApiAgentInfo,
   ApiAgentsForHuman,
 } from "./registration-flow";

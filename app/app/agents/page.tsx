@@ -289,7 +289,7 @@ export default function MyAgentsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lookupMode, setLookupMode] = useState<
-    "wallet" | "key" | "passkey" | "privy"
+    "wallet" | "key" | "passkey" | "privy" | "passport"
   >("wallet");
   const [agentKeyInput, setAgentKeyInput] = useState("");
   const [passkeyAddress, setPasskeyAddress] = useState<string | null>(null);
@@ -310,6 +310,11 @@ export default function MyAgentsPage() {
   const [refreshSessionToken, setRefreshSessionToken] = useState<string | null>(null);
   const [refreshPolling, setRefreshPolling] = useState(false);
   const refreshPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  // Passport scan (identify) flow
+  const [identifyQrData, setIdentifyQrData] = useState<unknown>(null);
+  const [identifySessionToken, setIdentifySessionToken] = useState<string | null>(null);
+  const [identifyPolling, setIdentifyPolling] = useState(false);
+  const identifyPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const {
     login: privyLogin,
@@ -602,10 +607,11 @@ export default function MyAgentsPage() {
     }
   };
 
-  // Cleanup refresh polling on unmount
+  // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (refreshPollRef.current) clearInterval(refreshPollRef.current);
+      if (identifyPollRef.current) clearInterval(identifyPollRef.current);
     };
   }, []);
 
@@ -758,6 +764,138 @@ export default function MyAgentsPage() {
     setRefreshDeepLink(null);
     setRefreshSessionToken(null);
     setRefreshPolling(false);
+  };
+
+  // Passport scan (identify) flow
+  const handleStartIdentify = async () => {
+    setIdentifyQrData(null);
+    setIdentifySessionToken(null);
+    setIdentifyPolling(false);
+    if (identifyPollRef.current) clearInterval(identifyPollRef.current);
+    setAgents([]);
+    setError("");
+    setLoading(true);
+
+    try {
+      const networkName = network.isTestnet ? "testnet" : "mainnet";
+      const resp = await fetch("/api/agent/identify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network: networkName }),
+      });
+
+      if (!resp.ok) {
+        const data = (await resp.json()) as { error?: string };
+        throw new Error(data.error || `Identify failed (${resp.status})`);
+      }
+
+      const data = (await resp.json()) as {
+        sessionToken: string;
+        qrData: unknown;
+        deepLink: string;
+      };
+
+      setIdentifyQrData(data.qrData);
+      setIdentifySessionToken(data.sessionToken);
+      setIdentifyPolling(true);
+      setLoading(false);
+
+      // Poll for NullifierIdentified event
+      let currentToken = data.sessionToken;
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResp = await fetch(
+            `/api/agent/identify/status?sessionToken=${encodeURIComponent(currentToken)}`,
+          );
+          if (!statusResp.ok) return;
+
+          const statusData = (await statusResp.json()) as {
+            stage: string;
+            sessionToken?: string;
+            nullifier?: string;
+            agentCount?: number;
+          };
+
+          if (statusData.sessionToken) {
+            currentToken = statusData.sessionToken;
+          }
+
+          if (statusData.stage === "completed" && statusData.nullifier) {
+            clearInterval(pollInterval);
+            identifyPollRef.current = null;
+            setIdentifyPolling(false);
+            setIdentifyQrData(null);
+            setIdentifySessionToken(null);
+
+            // Load all agents for this nullifier
+            await loadAgentsByNullifier(BigInt(statusData.nullifier));
+          }
+        } catch {
+          // Silently retry on network errors
+        }
+      }, 3000);
+
+      identifyPollRef.current = pollInterval;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to start passport scan",
+      );
+      setLoading(false);
+    }
+  };
+
+  const handleCloseIdentify = () => {
+    if (identifyPollRef.current) {
+      clearInterval(identifyPollRef.current);
+      identifyPollRef.current = null;
+    }
+    setIdentifyQrData(null);
+    setIdentifySessionToken(null);
+    setIdentifyPolling(false);
+  };
+
+  const loadAgentsByNullifier = async (nullifier: bigint) => {
+    setLoading(true);
+    setAgents([]);
+    setError("");
+
+    try {
+      const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+      const registry = typedRegistry(network.registryAddress, provider);
+
+      const agentIds = await registry.getAgentsForNullifier(nullifier);
+      if (agentIds.length === 0) {
+        setError("No agents found for this identity.");
+        setLoading(false);
+        return;
+      }
+
+      const results: AgentEntry[] = [];
+      for (const agentId of agentIds) {
+        try {
+          const agentKey = await registry.agentIdToAgentKey(agentId);
+          const ownerAddr = await registry.ownerOf(agentId);
+          const entry = await buildAgentEntry(
+            registry,
+            provider,
+            agentId,
+            agentKey,
+            ownerAddr,
+          );
+          if (entry) results.push(entry);
+        } catch {
+          // burned or invalid — skip
+        }
+      }
+
+      setAgents(results);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load agents by nullifier",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadAgentsByOwner = async (ownerAddress: string) => {
@@ -960,9 +1098,129 @@ export default function MyAgentsPage() {
             Social Login
           </button>
         )}
+        <button
+          onClick={() => {
+            setLookupMode("passport");
+            setAgents([]);
+            setError("");
+            handleCloseIdentify();
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            lookupMode === "passport"
+              ? "bg-surface-2 border border-accent-success text-foreground"
+              : "bg-surface-1 border border-border text-muted hover:text-foreground"
+          }`}
+        >
+          <Shield size={16} />
+          Scan Passport
+        </button>
       </div>
 
-      {lookupMode === "privy" ? (
+      {lookupMode === "passport" ? (
+        /* ── Passport scan (identify) mode ── */
+        identifyQrData ? (
+          <div className="space-y-4">
+            <Card className="text-center">
+              <Shield size={32} className="text-accent-success mx-auto mb-3" />
+              <h3 className="text-lg font-semibold mb-2">Scan Your Passport</h3>
+              <p className="text-sm text-muted mb-4">
+                Scan the QR code with the Self app to identify yourself via passport.
+                This will find all agents registered to your identity.
+              </p>
+              <div className="flex justify-center mb-4">
+                <SelfQRcodeWrapper
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  selfApp={identifyQrData as any}
+                  size={200}
+                  onSuccess={() => {
+                    // Status polling handles completion
+                  }}
+                  onError={(data: { error_code?: string; reason?: string }) => {
+                    setError(data.reason || data.error_code || "Passport scan failed");
+                    handleCloseIdentify();
+                  }}
+                />
+              </div>
+              {identifyPolling && (
+                <div className="flex items-center justify-center gap-2 text-sm text-muted">
+                  <Loader2 size={14} className="animate-spin" />
+                  Waiting for passport verification...
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCloseIdentify}
+                className="mt-3"
+              >
+                <X size={14} />
+                Cancel
+              </Button>
+            </Card>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {!loading && agents.length === 0 ? (
+              <div className="flex flex-col items-center gap-4">
+                <Shield size={32} className="text-accent-success" />
+                <Button
+                  onClick={() => void handleStartIdentify()}
+                  variant="primary"
+                  size="lg"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Shield size={18} />
+                      Scan Passport to Find Agents
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-subtle text-center max-w-xs">
+                  Uses your passport to find all agents registered to your
+                  identity, including Ed25519 and wallet-free agents. No data is
+                  stored — only a privacy-preserving nullifier is used.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted">
+                    <Shield size={14} className="inline mr-1" />
+                    Agents found via passport scan
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleStartIdentify()}
+                    disabled={loading}
+                  >
+                    <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                    Rescan
+                  </Button>
+                </div>
+
+                {loading && (
+                  <div className="flex flex-col items-center py-8 gap-3">
+                    <div className="w-8 h-8 border-2 border-border border-t-accent-success rounded-full animate-spin" />
+                    <p className="text-muted text-sm">Loading agents...</p>
+                  </div>
+                )}
+
+                {renderAgentCards(agents, null, null, network, (agent: AgentEntry) => void handleMintCard(agent), mintingCardFor, "passport", cardExtras)}
+                {sharedPanels}
+              </div>
+            )}
+
+            {error && <p className="text-sm text-accent-error">{error}</p>}
+          </div>
+        )
+      ) : lookupMode === "privy" ? (
         /* ── Privy (Social Login) mode ── */
         !privyConnectedAddress ? (
           <div className="flex flex-col items-center gap-4">
@@ -1280,7 +1538,7 @@ function renderAgentCards(
   network?: NetworkConfig,
   onMintCard?: ((agent: AgentEntry) => void) | null,
   mintingCardForId?: string | null,
-  lookupMode?: "wallet" | "key" | "passkey" | "privy",
+  lookupMode?: "wallet" | "key" | "passkey" | "privy" | "passport",
   extras?: CardExtras,
 ) {
   return agents.map((agent) => (
@@ -1627,9 +1885,13 @@ function RefreshQrModal({
       <div className="flex flex-col items-center gap-3">
         <div className="rounded-xl p-4 bg-white">
           <SelfQRcodeWrapper
-            selfApp={qrData as Parameters<typeof SelfQRcodeWrapper>[0]["selfApp"]}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            selfApp={qrData as any}
             onSuccess={() => {
               // Status polling handles completion
+            }}
+            onError={() => {
+              // Errors handled by polling
             }}
           />
         </div>

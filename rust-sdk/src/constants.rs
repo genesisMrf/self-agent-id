@@ -51,6 +51,9 @@ pub const EXPIRY_WARNING_DAYS: i32 = 30;
 /// Action byte for proof refresh requests.
 pub const ACTION_REFRESH: u8 = 0x46;
 
+/// Action byte for read-only nullifier identification.
+pub const ACTION_IDENTIFY: u8 = 0x49;
+
 /// Request headers used by the signing protocol.
 pub mod headers {
     /// Agent's Ethereum address (informational — identity is recovered from signature).

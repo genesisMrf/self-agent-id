@@ -2935,4 +2935,69 @@ contract SelfAgentRegistryTest is Test {
         vm.expectRevert(SelfAgentRegistry.InvalidUserData.selector);
         registry.onVerificationSuccess(output, shortUserData);
     }
+
+    // ====================================================
+    // ACTION_IDENTIFY — Read-only nullifier identification
+    // ====================================================
+
+    function test_Identify_EmitsNullifierIdentified() public {
+        // Register an agent first so there's something to find
+        _registerViaHub(human1, nullifier1);
+
+        bytes memory identifyData = abi.encodePacked(uint8(0x49), uint8(0));
+        bytes memory output = _buildEncodedOutput(human1, nullifier1);
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IERC8004ProofOfHuman.NullifierIdentified(nullifier1, 1);
+
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(output, identifyData);
+    }
+
+    function test_Identify_NoStateChanges() public {
+        _registerViaHub(human1, nullifier1);
+        uint256 agentId = registry.getAgentId(agentKey1);
+        uint256 countBefore = registry.getAgentCountForHuman(nullifier1);
+        uint256 expiryBefore = registry.proofExpiresAt(agentId);
+
+        bytes memory identifyData = abi.encodePacked(uint8(0x49), uint8(0));
+        bytes memory output = _buildEncodedOutput(human1, nullifier1);
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(output, identifyData);
+
+        // Nothing changed
+        assertEq(registry.getAgentCountForHuman(nullifier1), countBefore);
+        assertEq(registry.proofExpiresAt(agentId), expiryBefore);
+        assertTrue(registry.isVerifiedAgent(agentKey1));
+    }
+
+    function test_Identify_ZeroAgentsEmitsZeroCount() public {
+        // Identify with a nullifier that has no agents registered
+        bytes memory identifyData = abi.encodePacked(uint8(0x49), uint8(0));
+        bytes memory output = _buildEncodedOutput(human1, nullifier1);
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IERC8004ProofOfHuman.NullifierIdentified(nullifier1, 0);
+
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(output, identifyData);
+    }
+
+    function test_Identify_MultipleAgentsReportsCorrectCount() public {
+        _registerViaHub(human1, nullifier1);
+
+        // Register a second agent for the same human (different wallet)
+        vm.prank(owner);
+        registry.setMaxAgentsPerHuman(3);
+        _registerViaHub(human1alt, nullifier1);
+
+        bytes memory identifyData = abi.encodePacked(uint8(0x49), uint8(0));
+        bytes memory output = _buildEncodedOutput(human1, nullifier1);
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IERC8004ProofOfHuman.NullifierIdentified(nullifier1, 2);
+
+        vm.prank(hubMock);
+        registry.onVerificationSuccess(output, identifyData);
+    }
 }

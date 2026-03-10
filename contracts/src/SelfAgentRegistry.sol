@@ -85,6 +85,8 @@ contract SelfAgentRegistry is
     uint8 constant ACTION_REGISTER_ED25519 = 0x45;
     /// @dev Action byte for refreshing an existing human proof in-place ('F' = 0x46)
     uint8 constant ACTION_REFRESH = 0x46;
+    /// @dev Action byte for read-only nullifier identification ('I' = 0x49)
+    uint8 constant ACTION_IDENTIFY = 0x49;
 
     /// @notice Number of verification configs (age × OFAC combos)
     uint8 public constant NUM_CONFIGS = 6;
@@ -482,6 +484,9 @@ contract SelfAgentRegistry is
                 agentId := mload(add(userData, 34))
             }
             _refreshAgent(agentId, nullifier, configId_, output);
+        } else if (actionByte == ACTION_IDENTIFY) {
+            SelfAgentRegistryStorage storage $id = _getSelfAgentRegistryStorage();
+            emit NullifierIdentified(nullifier, $id.agentsByNullifier[nullifier].length);
         } else {
             revert InvalidAction(actionByte);
         }

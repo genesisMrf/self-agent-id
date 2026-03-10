@@ -39,6 +39,7 @@ DEFAULT_CACHE_TTL_MS = 60_000             # 1 minute
 
 # Self Hub V2 action byte for proof refresh
 ACTION_REFRESH = 0x46  # 'F'
+ACTION_IDENTIFY = 0x49  # 'I'
 
 # Seconds before expiry at which the proof is considered "expiring soon" (30 days)
 EXPIRY_WARNING_THRESHOLD_SECS = 30 * 24 * 60 * 60

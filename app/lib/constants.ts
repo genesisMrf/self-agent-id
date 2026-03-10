@@ -60,6 +60,7 @@ export const REGISTRY_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Proof refresh event
   "event HumanProofRefreshed(uint256 indexed agentId, uint256 newExpiry, uint256 nullifier, bytes32 configId)",
+  "event NullifierIdentified(uint256 indexed nullifier, uint256 agentCount)",
 ] as const;
 
 // Provider ABI — used to query provider metadata

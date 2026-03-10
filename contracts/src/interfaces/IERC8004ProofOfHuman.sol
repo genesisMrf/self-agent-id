@@ -47,6 +47,9 @@ interface IERC8004ProofOfHuman is IERC8004 {
     /// @notice Emitted when an agent's human proof is refreshed in-place
     event HumanProofRefreshed(uint256 indexed agentId, uint256 nullifier, uint256 newExpiresAt, bytes32 configId);
 
+    /// @notice Emitted when a human identifies themselves via passport scan (read-only, no state changes)
+    event NullifierIdentified(uint256 indexed nullifier, uint256 agentCount);
+
     // ---- Errors ----
 
     error ConfigMismatch(bytes32 expected, bytes32 actual);

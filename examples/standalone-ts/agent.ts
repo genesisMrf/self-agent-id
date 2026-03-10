@@ -36,7 +36,7 @@ console.log("Registered:", registered);
 
 if (!registered) {
   console.log("\nAgent not registered. To register:");
-  console.log("1. Visit https://self-agent-id.vercel.app/register");
+  console.log("1. Visit https://app.ai.self.xyz/register");
   console.log("2. Enter your Ed25519 seed (64 hex chars, no 0x prefix)");
   console.log("3. Scan the QR code with your Self app");
   console.log("4. Re-run this script after registration completes");

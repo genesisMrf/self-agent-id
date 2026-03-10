@@ -21,7 +21,7 @@ import { Ed25519Agent, SelfAgentVerifier } from "@selfxyz/agent-sdk";
 import { randomBytes } from "crypto";
 
 const BASE_URL =
-  process.env.DEMO_BASE_URL || "https://self-agent-id.vercel.app";
+  process.env.DEMO_BASE_URL || "https://app.ai.self.xyz";
 const NETWORK = process.env.NETWORK || "celo-sepolia";
 const SKIP_REGISTRATION = process.env.SKIP_REGISTRATION === "1";
 

@@ -8,6 +8,7 @@ import { HEADERS } from "@selfxyz/agent-sdk";
 import { getNetwork, NETWORKS, type NetworkId } from "@/lib/network";
 import { getCachedVerifier } from "@/lib/selfVerifier";
 import { checkAndRecordReplay } from "@/lib/replayGuard";
+import { demoEndpointDocs } from "@/lib/demo-docs";
 
 import { typedDemoVerifierEd25519, typedRegistry } from "@/lib/contract-types";
 
@@ -51,6 +52,45 @@ function checkRateLimit(nullifier: string): {
 // verifies Ed25519 signatures on-chain via AgentDemoVerifierEd25519.
 // The agent signs a plain keccak256(agentKey, nonce, deadline) message.
 // ---------------------------------------------------------------------------
+
+export async function GET() {
+  return demoEndpointDocs({
+    endpoint: "/api/demo/chain-verify-ed25519",
+    method: "POST",
+    description:
+      "Agent-to-Chain verification demo (Ed25519). Submits a meta-transaction to the AgentDemoVerifierEd25519 contract, which verifies Ed25519 signatures on-chain via SCL_EIP6565. A gas relayer submits the transaction on behalf of the agent.",
+    requiredHeaders: {
+      "x-self-agent-signature": "HMAC signature of the request",
+      "x-self-agent-timestamp": "ISO 8601 timestamp of the request",
+      "x-self-agent-keytype": "Must be 'ed25519'",
+      "x-self-agent-key": "Ed25519 public key (hex)",
+    },
+    bodySchema: {
+      agentKey: "bytes32 — the agent's public key in the registry",
+      nonce: "string — meta-tx nonce",
+      deadline: "number — unix timestamp expiry",
+      extKpub: "array of 5 uint256 strings — Weierstrass coordinates of Ed25519 pubkey",
+      sigR: "string — Ed25519 signature R component (uint256)",
+      sigS: "string — Ed25519 signature S component (uint256)",
+      "networkId?": "'celo-sepolia' (default) or 'celo-mainnet'",
+    },
+    exampleBody: {
+      agentKey: "0x...",
+      nonce: "0",
+      deadline: 1700000000,
+      extKpub: ["0", "0", "0", "0", "0"],
+      sigR: "0",
+      sigS: "0",
+      networkId: "celo-sepolia",
+    },
+    notes: [
+      "Requires RELAYER_PRIVATE_KEY server env var.",
+      "Rate limited: 3 verifications per hour per human nullifier.",
+      "For Ed25519 agents only. ECDSA agents should use /api/demo/chain-verify.",
+      "Computing extKpub requires the SCL library precompute for Weierstrass coordinates.",
+    ],
+  });
+}
 
 export async function POST(req: NextRequest) {
   if (!RELAYER_PK) {

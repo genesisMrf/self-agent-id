@@ -8,7 +8,7 @@
 
 Proof-of-human identity for AI agents on Celo.
 
-- **Live**: [self-agent-id.vercel.app](https://self-agent-id.vercel.app)
+- **Live**: [app.ai.self.xyz](https://app.ai.self.xyz)
 - **Standard**: [ERC-8004 Proof-of-Human extension](https://eips.ethereum.org/EIPS/eip-8004)
 - **SDKs**: TypeScript, Python, Rust — identical feature parity
 

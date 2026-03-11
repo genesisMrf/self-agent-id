@@ -453,7 +453,9 @@ require(registry.isProofFresh(agentId), "Proof expired");
 
 ### Refresh Flow
 
-To refresh: deregister (burn NFT) → re-register (mint new NFT). The agentId changes on refresh — update any stored references.
+**In-place refresh (preferred):** Use `requestProofRefresh({ agentId, network, disclosures })` — the human scans their passport again and `proofExpiresAt` is updated without changing the agentId.
+
+**Deregister + re-register:** If changing verification config or key type, deregister first then re-register. The agentId changes — update any stored references.
 
 ## Troubleshooting
 

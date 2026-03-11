@@ -291,14 +291,40 @@ After expiry:
 - `hasHumanProof(agentId)` still returns `true` — the historical proof record is preserved.
 - The soulbound NFT remains, but the agent is functionally inactive for freshness-gated operations.
 
-### How to Refresh
+### How to Refresh (In-Place)
 
-There is no in-place refresh function. To renew:
+Use the `requestProofRefresh()` SDK method to refresh a proof without changing the agentId. The human scans their passport again via the Self app, and the contract updates `proofExpiresAt` in-place.
 
-1. **Deregister** the expired agent using the `self_deregister_agent` MCP tool, `agent.requestDeregistration()` SDK method, or CLI `deregister` flow. This burns the NFT and clears all state (including `proofExpiresAt`).
-2. **Re-register** with the same agent key. The human scans their passport again via the Self app. A **new agentId** is minted with a fresh expiry.
+```typescript
+import { requestProofRefresh } from "@selfxyz/agent-sdk";
 
-The old agentId is permanently burned. The new agentId is monotonically higher. Plan for this in applications that store agentIds — they will change on refresh.
+const session = await requestProofRefresh({
+  agentId: 5, // existing agent ID to refresh
+  network: "mainnet",
+  disclosures: { minimumAge: 18, ofac: true }, // should match original registration
+});
+
+console.log("Scan QR to refresh:", session.deepLink);
+
+// Poll for completion — same pattern as registration
+let result = await session.poll();
+while (result.status === "pending") {
+  await new Promise((r) => setTimeout(r, 5000));
+  result = await session.poll();
+}
+// On success, proofExpiresAt is updated. agentId stays the same.
+```
+
+The contract emits `HumanProofRefreshed(agentId, newExpiry, nullifier, configId)` on success.
+
+### Alternative: Deregister and Re-Register
+
+If in-place refresh is not suitable (e.g., changing verification config or switching key types), deregister and re-register:
+
+1. **Deregister** using the `self_deregister_agent` MCP tool or `agent.requestDeregistration()` SDK method. This burns the NFT and clears all state.
+2. **Re-register** with the desired configuration. A **new agentId** is minted.
+
+The old agentId is permanently burned. Plan for this in applications that store agentIds — they will change.
 
 ### Proactive Monitoring
 

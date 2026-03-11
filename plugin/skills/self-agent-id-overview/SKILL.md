@@ -121,7 +121,7 @@ Key functions:
 - **`hasHumanProof(agentId)`** — returns `true` as long as a proof was ever submitted. Does NOT check expiry.
 - **`proofExpiresAt(agentId)`** — raw expiry timestamp (unix seconds).
 
-To refresh an expired proof, the agent must deregister (burn NFT) and re-register (mint new NFT with new agentId and fresh expiry). There is no in-place renewal. SDKs include a 30-day warning threshold for proactive monitoring.
+To refresh an expiring or expired proof, use `requestProofRefresh()` — the human scans their passport again and `proofExpiresAt` is updated in-place without changing the agentId. The contract emits `HumanProofRefreshed`. Alternatively, deregister (burn NFT) and re-register (new agentId with fresh expiry) if changing verification config. SDKs include a 30-day warning threshold for proactive monitoring.
 
 ## Quick Reference
 

@@ -1695,6 +1695,8 @@ const registryTaskHandler: TaskHandler = {
                   "",
                   "You'll need your Ed25519 public key and a signed challenge to prove key ownership.",
                   "",
+                  "Alternatively, the human operator can register directly at the web UI if they prefer — but this A2A flow lets you handle everything programmatically.",
+                  "",
                   "You can reply conversationally, or send a structured request:",
                 ),
                 dataPart({

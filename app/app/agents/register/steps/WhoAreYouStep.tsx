@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { User, Bot, Terminal, Globe, MessageSquare } from "lucide-react";
-import { Card } from "@/components/Card";
+import { User, Bot } from "lucide-react";
 import type { UserRole } from "../types";
 
 interface WhoAreYouStepProps {
@@ -30,8 +29,7 @@ export default function WhoAreYouStep({ onSelect }: WhoAreYouStepProps) {
             <span className="font-bold text-sm">I&apos;m a human</span>
           </div>
           <p className="text-muted text-xs">
-            I want to register an agent using the guided wizard. I&apos;ll
-            verify my identity with my passport via the Self app.
+            I want to register an agent using the guided wizard.
           </p>
         </button>
 

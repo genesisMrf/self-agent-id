@@ -121,7 +121,7 @@ Key functions:
 - **`hasHumanProof(agentId)`** — returns `true` as long as a proof was ever submitted. Does NOT check expiry.
 - **`proofExpiresAt(agentId)`** — raw expiry timestamp (unix seconds).
 
-To refresh an expired proof, the agent must deregister (burn NFT) and re-register (mint new NFT with new agentId and fresh expiry). There is no in-place renewal. SDKs include a 30-day warning threshold for proactive monitoring.
+To refresh an expiring or expired proof, use `requestProofRefresh()` — the human scans their passport again and `proofExpiresAt` is updated in-place without changing the agentId. The contract emits `HumanProofRefreshed`. Alternatively, deregister (burn NFT) and re-register (new agentId with fresh expiry) if changing verification config. SDKs include a 30-day warning threshold for proactive monitoring.
 
 ## Quick Reference
 
@@ -147,6 +147,17 @@ To refresh an expired proof, the agent must deregister (burn NFT) and re-registe
 | 4     | 18+  | On   | Age-gated (18+) + OFAC |
 | 5     | 21+  | On   | Age-gated (21+) + OFAC |
 
+### Registration Modes (Ed25519)
+
+In addition to the 4 ECDSA modes above, 2 Ed25519 modes are available:
+
+| Mode           | Code             | Agent Key      | Use Case                               |
+| -------------- | ---------------- | -------------- | -------------------------------------- |
+| Ed25519        | `ed25519`        | Ed25519 pubkey | Non-EVM ecosystems, Python/Rust-native |
+| Ed25519 Linked | `ed25519-linked` | Ed25519 pubkey | Ed25519 agent linked to a human wallet |
+
+Ed25519 agents produce identical HTTP auth headers and are verified transparently by `SelfAgentVerifier`.
+
 ### Authentication Headers
 
 Services verify agent HTTP requests using three headers:
@@ -159,13 +170,18 @@ Services verify agent HTTP requests using three headers:
 
 ### SDKs
 
-| Language   | Package              | Agent Class | Verifier Class      |
-| ---------- | -------------------- | ----------- | ------------------- |
-| TypeScript | `@selfxyz/agent-sdk` | `SelfAgent` | `SelfAgentVerifier` |
-| Python     | `selfxyz-agent-sdk`  | `SelfAgent` | `SelfAgentVerifier` |
-| Rust       | `self-agent-sdk`     | `SelfAgent` | `SelfAgentVerifier` |
+| Language   | Package              | Agent Class                  | Verifier Class      |
+| ---------- | -------------------- | ---------------------------- | ------------------- |
+| TypeScript | `@selfxyz/agent-sdk` | `SelfAgent` / `Ed25519Agent` | `SelfAgentVerifier` |
+| Python     | `selfxyz-agent-sdk`  | `SelfAgent` / `Ed25519Agent` | `SelfAgentVerifier` |
+| Rust       | `self-agent-sdk`     | `SelfAgent` / `Ed25519Agent` | `SelfAgentVerifier` |
 
-All SDKs expose identical APIs for registration, signing, verification, credentials, and agent cards. The `SelfAgent` class is used by the agent (AI system) to sign requests and manage identity. The `SelfAgentVerifier` class is used by the receiving service to verify incoming requests against on-chain state.
+All SDKs expose identical APIs for registration, signing, verification, credentials, and agent cards. Two agent classes are available:
+
+- **`SelfAgent`** — ECDSA (secp256k1) signing. Uses Ethereum keypairs. Lower on-chain gas (~3K). Best for EVM-native projects.
+- **`Ed25519Agent`** — Ed25519 signing. Uses 32-byte random keys. Best for Python, Rust, Solana, and non-EVM ecosystems. Produces identical HTTP auth headers — `SelfAgentVerifier` handles both transparently.
+
+The `SelfAgentVerifier` class is used by the receiving service to verify incoming requests against on-chain state. It accepts both ECDSA and Ed25519 signatures automatically.
 
 ### MCP Server
 

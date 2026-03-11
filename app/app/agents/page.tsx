@@ -311,16 +311,16 @@ export default function MyAgentsPage() {
   );
   const [refreshQrData, setRefreshQrData] = useState<unknown>(null);
   const [refreshDeepLink, setRefreshDeepLink] = useState<string | null>(null);
-  const [refreshSessionToken, setRefreshSessionToken] = useState<string | null>(
-    null,
-  );
+  const [_refreshSessionToken, setRefreshSessionToken] = useState<
+    string | null
+  >(null);
   const [refreshPolling, setRefreshPolling] = useState(false);
   const refreshPollRef = React.useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
   // Passport scan (identify) flow
   const [identifyQrData, setIdentifyQrData] = useState<unknown>(null);
-  const [identifySessionToken, setIdentifySessionToken] = useState<
+  const [_identifySessionToken, setIdentifySessionToken] = useState<
     string | null
   >(null);
   const [identifyPolling, setIdentifyPolling] = useState(false);
@@ -1148,7 +1148,7 @@ export default function MyAgentsPage() {
               </p>
               <div className="flex justify-center mb-4">
                 <SelfQRcodeWrapper
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
                   selfApp={identifyQrData as any}
                   size={200}
                   onSuccess={() => {
@@ -1850,7 +1850,7 @@ function SiblingAgentsPanel({
   loading,
   sourceAgentId,
   onClose,
-  network,
+  network: _network,
 }: {
   siblingAgents: AgentEntry[];
   loading: boolean;
@@ -1966,7 +1966,7 @@ function RefreshQrModal({
       <div className="flex flex-col items-center gap-3">
         <div className="rounded-xl p-4 bg-white">
           <SelfQRcodeWrapper
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
             selfApp={qrData as any}
             onSuccess={() => {
               // Status polling handles completion

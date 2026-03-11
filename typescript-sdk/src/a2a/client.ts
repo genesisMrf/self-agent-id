@@ -164,10 +164,12 @@ export class A2AClient {
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const readResult = await reader.read();
+        if (readResult.done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(readResult.value as Uint8Array, {
+          stream: true,
+        });
         const lines = buffer.split("\n");
         // Keep the last incomplete line in the buffer
         buffer = lines.pop() ?? "";

@@ -31,9 +31,8 @@ import {
   Bot,
   Send,
 } from "lucide-react";
-import { SelfAgent, HEADERS } from "@selfxyz/agent-sdk";
+import { SelfAgent } from "@selfxyz/agent-sdk";
 import type { Ed25519Agent } from "@selfxyz/agent-sdk";
-import type { SelfAgentVerifier } from "@selfxyz/agent-sdk";
 import TestCard, { type StepEntry } from "@/components/TestCard";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";

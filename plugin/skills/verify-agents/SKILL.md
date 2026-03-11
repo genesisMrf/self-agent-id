@@ -274,7 +274,7 @@ const verifier = SelfAgentVerifier.create()
   .requireOFAC() // Reject agents without OFAC clearance
   .requireSelfProvider() // CRITICAL: reject agents not verified by Self Protocol
   .sybilLimit(3) // Max 3 agents per human
-  .rateLimit({ windowMs: 60000, maxRequests: 100 }) // 100 requests per minute per agent
+  .rateLimit({ perMinute: 100 }) // 100 requests per minute per agent
   .build();
 ```
 
@@ -371,8 +371,10 @@ let verifier = SelfAgentVerifier::builder()
 | ---------------------- | -------------------------------------------- | -------------------------------------------- |
 | SelfAgentRegistry      | `0xaC3DF9ABf80d0F5c020C06B04Cced27763355944` | `0x043DaCac8b0771DD5b444bCC88f2f8BBDBEdd379` |
 | SelfHumanProofProvider | `0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d` | `0x5E61c3051Bf4115F90AacEAE6212bc419f8aBB6c` |
-| SelfReputationProvider | Deployed alongside registry                  | Deployed alongside registry                  |
-| SelfValidationProvider | Deployed alongside registry                  | Deployed alongside registry                  |
+| SelfReputationProvider | `0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4` | `0x3Bb0A898C1C0918763afC22ff624131b8F420CC2` |
+| SelfValidationProvider | `0x71a025e0e338EAbcB45154F8b8CA50b41e7A0577` | `0x84cA20B8A1559F136dA03913dbe6A7F68B6B240B` |
+| AgentDemoVerifier      | `0xD8ec054FD869A762bC977AC328385142303c7def` | `0xc31BAe8f2d7FCd19f737876892f05d9bDB294241` |
+| AgentGate              | `0x26e05bF632fb5bACB665ab014240EAC1413dAE35` | `0x86Af07e30Aa42367cbcA7f2B1764Be346598bbc2` |
 
 ---
 

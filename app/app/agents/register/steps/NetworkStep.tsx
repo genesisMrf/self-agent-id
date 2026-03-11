@@ -10,7 +10,10 @@ interface NetworkStepProps {
   onBack: () => void;
 }
 
-export default function NetworkStep({ onContinue, onBack }: NetworkStepProps) {
+export default function NetworkStep({
+  onContinue,
+  onBack: _onBack,
+}: NetworkStepProps) {
   const { networkId, setNetworkId } = useNetwork();
 
   return (

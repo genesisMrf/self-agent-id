@@ -134,7 +134,7 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-function bytesToBigInt(bytes: Uint8Array): bigint {
+function _bytesToBigInt(bytes: Uint8Array): bigint {
   let result = 0n;
   for (const b of bytes) {
     result = (result << 8n) | BigInt(b);
@@ -178,7 +178,7 @@ export function computeEd25519ChallengeHash(params: {
  * @returns [Wx, Wy, Wx128, Wy128, compressedLE] as bigint array
  */
 export function computeExtKpub(pubkeyHex: string): bigint[] {
-  const pubkeyBytes = hexToBytes(pubkeyHex);
+  const _pubkeyBytes = hexToBytes(pubkeyHex);
 
   // 1. Decompress Ed25519 point using @noble/curves
   const rawPoint = ed25519.Point.fromHex(pubkeyHex);

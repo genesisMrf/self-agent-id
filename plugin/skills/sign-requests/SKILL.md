@@ -1,11 +1,12 @@
 ---
 name: sign-requests
 description: >
-  How to sign HTTP requests with Self Agent ID's 3-header ECDSA authentication
-  system. Covers the signing algorithm, MCP tools (self_sign_request,
-  self_authenticated_fetch), SDK usage in TypeScript/Python/Rust, and replay
-  protection. Use when the user asks to "sign a request", "authenticate as agent",
-  "agent auth headers", "self agent fetch", "signed HTTP request", or
+  How to sign HTTP requests with Self Agent ID's 3-header authentication
+  system. Covers ECDSA and Ed25519 signing, the signing algorithm, MCP tools
+  (self_sign_request, self_authenticated_fetch), SDK usage in
+  TypeScript/Python/Rust, and replay protection. Use when the user asks to
+  "sign a request", "authenticate as agent", "agent auth headers",
+  "self agent fetch", "signed HTTP request", "ed25519 signing", or
   "make authenticated call".
 license: MIT
 metadata:
@@ -257,6 +258,43 @@ The timestamp-based replay protection works as follows:
 - **Millisecond precision.** Timestamps use millisecond precision (not seconds) to reduce the collision window for concurrent requests from the same agent.
 
 - **No nonce required.** The combination of millisecond timestamps and per-request body binding makes explicit nonce tracking unnecessary for most use cases. For high-security scenarios requiring strict at-most-once delivery, services can additionally track seen `(address, timestamp, signature)` tuples within the freshness window.
+
+## Ed25519 Signing
+
+All three SDKs also provide an `Ed25519Agent` class for Ed25519-based signing. The API is identical to `SelfAgent`, but uses Ed25519 keys instead of ECDSA (secp256k1).
+
+### TypeScript
+
+```typescript
+import { Ed25519Agent } from "@selfxyz/agent-sdk";
+
+const agent = new Ed25519Agent({ privateKey: process.env.AGENT_PRIVATE_KEY! });
+
+// Same API as SelfAgent
+const headers = await agent.signRequest("POST", url, body);
+const response = await agent.fetch(url, { method: "POST", body });
+```
+
+### Python
+
+```python
+from self_agent_sdk import Ed25519Agent
+
+agent = Ed25519Agent(private_key=os.environ["AGENT_PRIVATE_KEY"])
+headers = agent.sign_request("POST", url, body)
+response = agent.fetch(url, method="POST", body=body)
+```
+
+### Rust
+
+```rust
+use self_agent_sdk::Ed25519Agent;
+
+let agent = Ed25519Agent::new(std::env::var("AGENT_PRIVATE_KEY").unwrap())?;
+let headers = agent.sign_request("POST", url, Some(body)).await?;
+```
+
+Ed25519 agents include an additional header `x-self-agent-keytype: "ed25519"` and use `x-self-agent-key` (public key) instead of `x-self-agent-address`. The `SelfAgentVerifier` handles both key types transparently — no server-side changes needed.
 
 ## Common Patterns
 

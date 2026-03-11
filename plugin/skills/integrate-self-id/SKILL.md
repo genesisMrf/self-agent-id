@@ -72,14 +72,29 @@ const agent = new SelfAgent({
 const info = await agent.getInfo();
 if (!info.registered) {
   // Initiate registration — human scans QR with Self app
-  const session = await agent.requestRegistration({
-    minimumAge: 18,
-    ofac: true,
+  // requestRegistration is a static method
+  const session = await SelfAgent.requestRegistration({
+    mode: "linked",
+    network: "mainnet",
+    disclosures: { minimumAge: 18, ofac: true },
+    humanAddress: "0x...", // the human's wallet address
   });
-  console.log("Scan QR:", session.qrUrl);
+  console.log("Scan QR:", session.deepLink);
 }
 
 // Make authenticated requests (auto-signs with 3-header system)
+const res = await agent.fetch("https://api.example.com/data", {
+  method: "POST",
+  body: JSON.stringify({ query: "hello" }),
+});
+```
+
+For Ed25519 agents (Python/Rust-friendly), use `Ed25519Agent` after registering with mode `"ed25519-linked"`:
+
+```typescript
+import { Ed25519Agent } from "@selfxyz/agent-sdk";
+
+const agent = new Ed25519Agent({ privateKey: process.env.AGENT_PRIVATE_KEY! });
 const res = await agent.fetch("https://api.example.com/data", {
   method: "POST",
   body: JSON.stringify({ query: "hello" }),

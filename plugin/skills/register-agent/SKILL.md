@@ -53,7 +53,14 @@ Select the registration mode that best fits the use case:
 | wallet-free                  | No human wallet needed               | Agent-generated, guardian = Self app | Managed entirely via Self app          |
 | smart-wallet                 | Best UX, passkey-based               | ZeroDev Kernel + Pimlico             | Gasless on mainnet, most complex setup |
 
-For most production use cases, choose **agent-identity** mode. It provides the strongest separation between human identity and agent operations, and gives the agent its own wallet for signing requests independently.
+Two additional modes support Ed25519 key types:
+
+| Mode                         | When to Use                                  | Agent Key      | Trade-off                                |
+| ---------------------------- | -------------------------------------------- | -------------- | ---------------------------------------- |
+| ed25519                      | Non-EVM ecosystems, Python/Rust-native       | Ed25519 pubkey | Natural for non-Ethereum stacks          |
+| ed25519-linked               | Ed25519 agent linked to human wallet         | Ed25519 pubkey | Combines Ed25519 signing with human link |
+
+For most production use cases, choose **agent-identity** (ECDSA) or **ed25519-linked** (Ed25519) mode. Both provide strong separation between human identity and agent operations, and give the agent its own keypair for signing requests independently.
 
 For a detailed technical comparison of all four modes, including userDefinedData encoding formats and decision trees, see [`references/registration-modes.md`](references/registration-modes.md).
 
@@ -141,34 +148,35 @@ This confirms the full registration is complete and the agent identity is querya
 
 For programmatic registration in TypeScript:
 
+### TypeScript (ECDSA)
+
 ```typescript
 import { SelfAgent } from "@selfxyz/agent-sdk";
 
-// Generate a new agent (creates a fresh ECDSA keypair)
-const agent = new SelfAgent({ network: "testnet" });
-
-// Or use an existing private key
-// const agent = new SelfAgent({ privateKey: "0x...", network: "testnet" });
-
-// Initiate registration with config: age 18+, OFAC check
-const session = await agent.register("linked", {
-  minimumAge: 18,
-  ofac: true,
+// requestRegistration is a static method — no agent instance needed yet
+const session = await SelfAgent.requestRegistration({
+  mode: "linked", // or "self-custody", "wallet-free", "smartwallet"
+  network: "testnet",
+  disclosures: { minimumAge: 18, ofac: true },
+  humanAddress: "0x...", // required for "linked" and "self-custody" modes
 });
 
 // Display QR code to the human
 console.log("Scan this QR code with the Self app:", session.deepLink);
-console.log("Session token received");
 
 // Poll for completion
-let status = await agent.getRegistrationStatus();
-while (status.status === "pending") {
+let result = await session.poll();
+while (result.status === "pending") {
   await new Promise((r) => setTimeout(r, 5000)); // Wait 5 seconds
-  status = await agent.getRegistrationStatus();
+  result = await session.poll();
 }
 
-if (status.status === "verified") {
-  console.log("Agent registered! ID:", status.agentId);
+if (result.status === "completed") {
+  console.log("Agent registered! ID:", result.agentId);
+
+  // Now create an agent instance with the private key
+  const privateKey = await session.exportPrivateKey();
+  const agent = new SelfAgent({ privateKey, network: "testnet" });
 
   // Confirm identity
   const info = await agent.getInfo();
@@ -178,10 +186,64 @@ if (status.status === "verified") {
 }
 ```
 
-Python and Rust SDKs expose the same API surface. Replace `SelfAgent` import with the equivalent package:
+### TypeScript (Ed25519)
 
-- Python: `from selfxyz_agent_sdk import SelfAgent`
-- Rust: `use self_agent_sdk::SelfAgent;`
+For non-Ethereum ecosystems (Python, Rust, Solana, SSH-key workflows), use the Ed25519 variant:
+
+```typescript
+import { SelfAgent } from "@selfxyz/agent-sdk";
+
+// Use "ed25519" or "ed25519-linked" mode
+const session = await SelfAgent.requestRegistration({
+  mode: "ed25519-linked",
+  network: "testnet",
+  disclosures: { minimumAge: 18, ofac: true },
+  humanAddress: "0x...",
+});
+
+// Same QR + poll flow as ECDSA...
+```
+
+After registration, use `Ed25519Agent` instead of `SelfAgent`:
+
+```typescript
+import { Ed25519Agent } from "@selfxyz/agent-sdk";
+
+const agent = new Ed25519Agent({ privateKey: "0x..." });
+const headers = await agent.signRequest("POST", url, body);
+// Headers include x-self-agent-keytype: "ed25519"
+```
+
+Ed25519 agents produce identical HTTP auth headers and are verified transparently by `SelfAgentVerifier`. The key difference: Ed25519 keys are 32 random bytes (not secp256k1 keypairs), making them more natural for Python, Rust, and non-EVM ecosystems.
+
+### Python
+
+```python
+from self_agent_sdk import SelfAgent
+
+session = SelfAgent.request_registration(
+    mode="linked",
+    network="testnet",
+    disclosures={"minimum_age": 18, "ofac": True},
+    human_address="0x...",
+)
+
+# Same QR + poll flow
+```
+
+### Rust
+
+```rust
+use self_agent_sdk::SelfAgent;
+
+let session = SelfAgent::request_registration(RegistrationRequest {
+    mode: "linked".into(),
+    network: Some("testnet".into()),
+    disclosures: Some(Disclosures { minimum_age: Some(18), ofac: Some(true), ..Default::default() }),
+    human_address: Some("0x...".into()),
+    ..Default::default()
+}).await?;
+```
 
 ## Private Key Security
 

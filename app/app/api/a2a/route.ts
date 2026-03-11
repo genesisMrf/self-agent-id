@@ -1730,7 +1730,8 @@ const registryTaskHandler: TaskHandler = {
     return task;
   },
 
-  onGetTask(taskId: string, historyLength?: number): Promise<Task> {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async onGetTask(taskId: string, historyLength?: number): Promise<Task> {
     const task = taskStore.get(taskId);
     if (!task) {
       throw new Error(`Task not found: ${taskId}`);
@@ -1742,7 +1743,8 @@ const registryTaskHandler: TaskHandler = {
     return task;
   },
 
-  onCancelTask(taskId: string): Promise<Task> {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async onCancelTask(taskId: string): Promise<Task> {
     const task = taskStore.get(taskId);
     if (!task) {
       throw new Error(`Task not found: ${taskId}`);

@@ -86,8 +86,8 @@ export async function GET(req: NextRequest) {
       // we want the latest one from this session's time window.
       const latest = events[events.length - 1];
       const log = latest as ethers.EventLog;
-      const nullifier = log.args[0].toString();
-      const agentCount = Number(log.args[1]);
+      const nullifier = (log.args[0] as { toString(): string }).toString();
+      const agentCount = Number(log.args[1] as bigint);
 
       session.stage = "completed";
       session.nullifier = nullifier;

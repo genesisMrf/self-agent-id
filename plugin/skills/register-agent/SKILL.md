@@ -55,10 +55,10 @@ Select the registration mode that best fits the use case:
 
 Two additional modes support Ed25519 key types:
 
-| Mode                         | When to Use                                  | Agent Key      | Trade-off                                |
-| ---------------------------- | -------------------------------------------- | -------------- | ---------------------------------------- |
-| ed25519                      | Non-EVM ecosystems, Python/Rust-native       | Ed25519 pubkey | Natural for non-Ethereum stacks          |
-| ed25519-linked               | Ed25519 agent linked to human wallet         | Ed25519 pubkey | Combines Ed25519 signing with human link |
+| Mode           | When to Use                            | Agent Key      | Trade-off                                |
+| -------------- | -------------------------------------- | -------------- | ---------------------------------------- |
+| ed25519        | Non-EVM ecosystems, Python/Rust-native | Ed25519 pubkey | Natural for non-Ethereum stacks          |
+| ed25519-linked | Ed25519 agent linked to human wallet   | Ed25519 pubkey | Combines Ed25519 signing with human link |
 
 For most production use cases, choose **agent-identity** (ECDSA) or **ed25519-linked** (Ed25519) mode. Both provide strong separation between human identity and agent operations, and give the agent its own keypair for signing requests independently.
 

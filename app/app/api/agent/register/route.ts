@@ -10,7 +10,6 @@
 import type { NextRequest } from "next/server";
 import { ethers } from "ethers";
 import {
-  buildSimpleRegisterUserDataAscii,
   buildAdvancedRegisterUserDataAscii,
   buildWalletFreeRegisterUserDataAscii,
   signRegistrationChallenge,

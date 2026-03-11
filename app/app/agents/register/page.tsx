@@ -41,7 +41,7 @@ import { Button } from "@/components/Button";
 import { isPasskeySupported, createPasskeyWallet } from "@/lib/aa";
 import { savePasskey } from "@/lib/passkey-storage";
 import { saveAgentPrivateKey } from "@/lib/agentKeyVault";
-import { usePrivyState, isPrivyConfigured } from "@/lib/privy";
+import { usePrivyState } from "@/lib/privy";
 
 import { typedRegistry } from "@/lib/contract-types";
 import { writeAgentCard as writeAgentCardShared } from "@/lib/writeAgentCard";
@@ -93,7 +93,7 @@ export default function RegisterPage() {
   const [smartWalletAddress, setSmartWalletAddress] = useState<string | null>(
     null,
   );
-  const [passkeySupported, setPasskeySupported] = useState(true);
+  const [_passkeySupported, setPasskeySupported] = useState(true);
   const [loading, setLoading] = useState(false);
 
   // Ed25519 mode state

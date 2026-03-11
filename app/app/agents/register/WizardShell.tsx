@@ -8,7 +8,7 @@ import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { ChevronLeft, Terminal, Globe, MessageSquare } from "lucide-react";
 import { Card } from "@/components/Card";
-import type { WizardStep, UserRole, Mode } from "./types";
+import type { UserRole, Mode } from "./types";
 import WhoAreYouStep from "./steps/WhoAreYouStep";
 import { ModeSelector } from "./steps/ModeSelector";
 

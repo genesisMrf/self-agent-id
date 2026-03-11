@@ -15,7 +15,6 @@ import {
   Eye,
   Layers,
   Fingerprint,
-  Wallet,
   Key,
   ExternalLink,
   Code2,

@@ -72,10 +72,10 @@ function availableModes(): Mode[] {
     : ALL_MODES.filter((m) => m !== "privy");
 }
 
-export function ModeSelector({ role, onSelect, onBack }: ModeSelectorProps) {
+export function ModeSelector({ onSelect, onBack }: ModeSelectorProps) {
   const [question, setQuestion] = useState<Question>("has-ed25519");
   const [showAll, setShowAll] = useState(false);
-  const modes = useMemo(() => availableModes(), []);
+  const _modes = useMemo(() => availableModes(), []);
   // Always show all modes in comparison table, even if privy isn't configured locally
   const allModesForTable: Mode[] = ALL_MODES;
 

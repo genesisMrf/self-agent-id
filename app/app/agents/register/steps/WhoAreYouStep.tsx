@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { User, Bot, Terminal, Globe, MessageSquare } from "lucide-react";
-import { Card } from "@/components/Card";
+import { User, Bot } from "lucide-react";
 import type { UserRole } from "../types";
 
 interface WhoAreYouStepProps {

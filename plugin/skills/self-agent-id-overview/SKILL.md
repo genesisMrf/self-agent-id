@@ -151,10 +151,10 @@ To refresh an expiring or expired proof, use `requestProofRefresh()` — the hum
 
 In addition to the 4 ECDSA modes above, 2 Ed25519 modes are available:
 
-| Mode                         | Code             | Agent Key     | Use Case                                  |
-| ---------------------------- | ---------------- | ------------- | ----------------------------------------- |
-| Ed25519                      | `ed25519`        | Ed25519 pubkey | Non-EVM ecosystems, Python/Rust-native    |
-| Ed25519 Linked               | `ed25519-linked` | Ed25519 pubkey | Ed25519 agent linked to a human wallet    |
+| Mode           | Code             | Agent Key      | Use Case                               |
+| -------------- | ---------------- | -------------- | -------------------------------------- |
+| Ed25519        | `ed25519`        | Ed25519 pubkey | Non-EVM ecosystems, Python/Rust-native |
+| Ed25519 Linked | `ed25519-linked` | Ed25519 pubkey | Ed25519 agent linked to a human wallet |
 
 Ed25519 agents produce identical HTTP auth headers and are verified transparently by `SelfAgentVerifier`.
 

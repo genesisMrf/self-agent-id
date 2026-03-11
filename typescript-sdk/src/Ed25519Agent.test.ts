@@ -11,7 +11,7 @@ import { HEADERS } from "./constants";
 import { SelfAgentVerifier } from "./SelfAgentVerifier";
 
 // A deterministic test private key (32 bytes hex)
-const TEST_PRIVATE_KEY =
+const _TEST_PRIVATE_KEY =
   "0x4cdb08e75df7b2cc tried9c3e5f8dc91a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8";
 // Use a simpler deterministic key
 const TEST_KEY_HEX =
